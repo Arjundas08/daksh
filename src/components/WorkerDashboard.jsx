@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 
 const API_BASE = 'http://localhost:8000';
 
@@ -9,6 +10,17 @@ export default function WorkerDashboard({ worker, language, onLogout }) {
   const [activeJobs, setActiveJobs] = useState([]);
   const [loadingJobs, setLoadingJobs] = useState(true);
   const [processingId, setProcessingId] = useState(null);
+  
+  // New features state
+  const [showSafetyWarning, setShowSafetyWarning] = useState(true); // Pops up immediately for demo
+  const [simSkill, setSimSkill] = useState('Current'); // 'Current' | 'Supervisor'
+  const [simLoan, setSimLoan] = useState(false);
+  
+  // Real weather & time state
+  const [weather, setWeather] = useState(null);
+  const [loadingWeather, setLoadingWeather] = useState(true);
+  const [isDanger, setIsDanger] = useState(false);
+  const [currentTime, setCurrentTime] = useState("");
 
   const w = worker || {
     id: 'DEMO-001',
@@ -19,6 +31,62 @@ export default function WorkerDashboard({ worker, language, onLogout }) {
     jobsCompleted: 0,
     earnings: 0,
   };
+
+  // Live worker data (refreshes from DB to catch payment updates)
+  const [liveWorker, setLiveWorker] = useState(w);
+
+  useEffect(() => {
+    async function refreshWorker() {
+      try {
+        const res = await fetch(`${API_BASE}/api/workers/${w.id}`);
+        const data = await res.json();
+        if (data.success && data.worker) {
+          setLiveWorker({
+            ...w,
+            earnings: data.worker.earnings || 0,
+            trustScore: data.worker.trust_score || w.trustScore,
+            jobsCompleted: data.worker.jobs_completed || w.jobsCompleted,
+          });
+        }
+      } catch(e) { /* ignore */ }
+    }
+    refreshWorker();
+    const interval = setInterval(refreshWorker, 5000);
+    return () => clearInterval(interval);
+  }, [w.id]);
+
+  useEffect(() => {
+    const now = new Date();
+    setCurrentTime(now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
+
+    if ("geolocation" in navigator) {
+      navigator.geolocation.getCurrentPosition(async (position) => {
+        try {
+          const { latitude, longitude } = position.coords;
+          const res = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&current_weather=true`);
+          const data = await res.json();
+          if (data.current_weather) {
+            setWeather(data.current_weather);
+            // Danger thresholds: Temp > 35C or Wind > 20 km/h
+            if (data.current_weather.temperature > 35 || data.current_weather.windspeed > 20) {
+              setIsDanger(true);
+            } else {
+              setIsDanger(false);
+            }
+          }
+        } catch (err) {
+          console.error("Weather fetch failed", err);
+        } finally {
+          setLoadingWeather(false);
+        }
+      }, (error) => {
+        console.error("Location error:", error);
+        setLoadingWeather(false);
+      });
+    } else {
+      setLoadingWeather(false);
+    }
+  }, []);
 
   useEffect(() => {
     async function fetchJobs() {
@@ -73,282 +141,609 @@ export default function WorkerDashboard({ worker, language, onLogout }) {
   };
   const skillIcon = skillIcons[w.skill] || skillIcons.Default;
 
-  const t = {
-    hi: {
-      welcome: 'नमस्ते', trustScore: 'Trust Score', trustSub: 'आपका भरोसा मीटर',
-      jobs: 'काम पूरे', earnings: 'कुल कमाई', newMatches: 'नए काम',
-      accept: 'स्वीकार करें', idTitle: 'Digital ID', noJobs: 'कोई नया काम नहीं',
-      perDay: '/दिन', days: 'दिन', matchTag: 'Skill Match', otherTag: 'Other',
-      verified: 'Verified', home: 'होम', feed: 'काम खोजें', active: 'मेरा काम',
-    },
-    en: {
-      welcome: 'Welcome', trustScore: 'Trust Score', trustSub: 'Reliability Rating',
-      jobs: 'Jobs Done', earnings: 'Earned', newMatches: 'New Matches',
-      accept: 'Accept', idTitle: 'Digital ID', noJobs: 'No jobs available',
-      perDay: '/day', days: 'days', matchTag: 'Match', otherTag: 'Other',
-      verified: 'Verified', home: 'Home', feed: 'Find Work', active: 'My Work',
-    }
-  };
-  const text = t[language] || t.en;
-  const score = w.trustScore || 50;
+  const score = liveWorker.trustScore || 50;
 
+  // Tabs for Sidebar
   const tabs = [
-    { id: 'home', label: text.home, icon: (
-      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-4 0a1 1 0 01-1-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 01-1 1" /></svg>
-    )},
-    { id: 'feed', label: text.feed, icon: (
-      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
-    ), badge: jobs.length },
-    { id: 'active', label: text.active, icon: (
-      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" /></svg>
-    ), badge: activeJobs.length },
+    { id: 'home', label: 'Overview', icon: '🏠' },
+    { id: 'feed', label: 'Find Work', icon: '🔍', badge: jobs.length },
+    { id: 'active', label: 'Active Contracts', icon: '📋', badge: activeJobs.length },
+    { id: 'wallet', label: 'Escrow Wallet', icon: '💰' },
+    { id: 'growth', label: 'Income Simulator', icon: '📈' },
   ];
+
+  /* ─────────────────── SAFETY WARNING MODAL ─────────────────── */
+  const renderSafetyWarning = () => {
+    if (loadingWeather) {
+      return (
+        <div className="fixed inset-0 z-[100] flex flex-col items-center justify-center p-4 bg-black/90 backdrop-blur-md">
+          <div className="w-12 h-12 border-4 border-slate-700 border-t-orange-500 rounded-full animate-spin mb-4"></div>
+          <p className="text-orange-400 font-bold uppercase tracking-widest text-sm">Predictive Safety AI Scanning...</p>
+          <p className="text-slate-500 text-xs mt-2">Checking real-time local weather & site data</p>
+        </div>
+      );
+    }
+
+    const temp = weather?.temperature || "N/A";
+    const wind = weather?.windspeed || "N/A";
+
+    return (
+      <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-in fade-in duration-300">
+        <div className={`max-w-md w-full bg-slate-900 border-2 rounded-3xl overflow-hidden ${isDanger ? 'border-rose-500 shadow-[0_0_50px_rgba(244,63,113,0.3)]' : 'border-emerald-500 shadow-[0_0_50px_rgba(16,185,129,0.3)]'}`}>
+          <div className={`${isDanger ? 'bg-rose-500' : 'bg-emerald-500'} p-6 text-center`}>
+            <div className={`text-5xl mb-2 ${isDanger ? 'animate-bounce' : ''}`}>{isDanger ? '⚠️' : '✅'}</div>
+            <h2 className="text-2xl font-black text-white uppercase tracking-wider">
+              {isDanger ? 'Aaj Khatra Hai' : 'Mausam Sahi Hai'}
+            </h2>
+            <p className={`${isDanger ? 'text-rose-100' : 'text-emerald-100'} font-medium mt-1`}>
+              Predictive AI Report • {currentTime}
+            </p>
+          </div>
+          
+          <div className="p-6 space-y-6">
+            {/* AI Analysis */}
+            <div className="space-y-3">
+              <div className="flex items-start gap-3">
+                <span className={`${isDanger && temp > 35 ? 'text-rose-400' : 'text-emerald-400'} mt-0.5`}>🌡️</span>
+                <div>
+                  <span className="text-white font-bold block">Local Temperature: {temp}°C</span>
+                  <span className="text-slate-400 text-sm">
+                    {temp > 35 ? "Critical heat stroke risk detected today." : "Temperature is within safe working limits."}
+                  </span>
+                </div>
+              </div>
+              <div className="flex items-start gap-3">
+                <span className={`${isDanger && wind > 20 ? 'text-rose-400' : 'text-emerald-400'} mt-0.5`}>🌪️</span>
+                <div>
+                  <span className="text-white font-bold block">Wind Speed: {wind} km/h</span>
+                  <span className="text-slate-400 text-sm">
+                    {wind > 20 ? "High winds. Scaffolding work is highly unsafe." : "Wind conditions are stable."}
+                  </span>
+                </div>
+              </div>
+              {isDanger && (
+                <div className="flex items-start gap-3">
+                  <span className="text-orange-400 mt-0.5">🏥</span>
+                  <div>
+                    <span className="text-white font-bold block">Your Medical History</span>
+                    <span className="text-slate-400 text-sm">You reported dizziness in heat 2 weeks ago. AI flags you as vulnerable.</span>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div className="h-px bg-slate-800"></div>
+
+            {/* Mandatory Actions */}
+            <div>
+              <h3 className={`text-xs font-black uppercase tracking-widest mb-3 ${isDanger ? 'text-rose-500' : 'text-emerald-500'}`}>
+                {isDanger ? 'Mandatory Directives' : 'Standard Protocol'}
+              </h3>
+              <ul className="space-y-2 text-slate-300 font-medium text-sm">
+                <li className="flex items-center gap-2"><span>✅</span> {isDanger ? 'Extra water break every 30 mins' : 'Stay hydrated regularly'}</li>
+                <li className="flex items-center gap-2"><span>✅</span> {isDanger ? 'Mandatory harness double-check due to wind' : 'Wear standard safety gear'}</li>
+                {isDanger && <li className="flex items-center gap-2"><span>✅</span> Site operations halt at 12:00 PM</li>}
+              </ul>
+            </div>
+
+            <div className={isDanger ? "grid grid-cols-2 gap-3 pt-2" : "pt-2"}>
+              {isDanger ? (
+                <>
+                  <button 
+                    onClick={() => setShowSafetyWarning(false)}
+                    className="bg-slate-800 hover:bg-slate-700 text-white font-bold py-4 rounded-xl transition-all"
+                  >
+                    Aaj Nahi (Skip)
+                  </button>
+                  <button 
+                    onClick={() => setShowSafetyWarning(false)}
+                    className="bg-rose-500 hover:bg-rose-600 text-white font-bold py-4 rounded-xl transition-all shadow-lg shadow-rose-500/30"
+                  >
+                    Main Taiyar Hu
+                  </button>
+                </>
+              ) : (
+                <button 
+                  onClick={() => setShowSafetyWarning(false)}
+                  className="w-full bg-emerald-500 hover:bg-emerald-600 text-white font-bold py-4 rounded-xl transition-all shadow-lg shadow-emerald-500/30"
+                >
+                  Enter Dashboard
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  };
 
   /* ─────────────────── HOME TAB ─────────────────── */
   const renderHome = () => (
-    <div className="space-y-8 animate-in">
-      {/* Welcome Banner */}
-      <div className="rounded-2xl bg-gradient-to-br from-slate-800 to-slate-900 p-8 sm:p-10 border border-slate-700/50">
-        <div className="flex items-center gap-4 mb-1">
-          <span className="text-3xl">{skillIcon}</span>
-          <span className="text-xs font-bold tracking-widest uppercase text-orange-400 bg-orange-400/10 px-3 py-1 rounded-full">{w.skill}</span>
-          <span className="text-xs text-slate-500 font-medium">{w.location}</span>
+    <div className="space-y-8 animate-in slide-in-from-bottom-4 duration-500">
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-4xl font-black text-white" style={{ fontFamily: 'Outfit' }}>Welcome, {w.name.split(' ')[0]} 👋</h1>
+          <p className="text-slate-400 mt-1">Here is your digital shram profile.</p>
         </div>
-        <h1 className="text-4xl sm:text-5xl font-black text-white mt-4 tracking-tight" style={{ fontFamily: 'Outfit' }}>
-          {text.welcome}, {w.name.split(' ')[0]} 👋
-        </h1>
-      </div>
-
-      {/* Stats Grid */}
-      <div className="grid grid-cols-3 gap-5">
-        <div className="rounded-2xl bg-slate-800/50 border border-slate-700/50 p-6 text-center hover:border-orange-500/30 transition-colors">
-          <div className="text-[11px] font-bold text-slate-500 uppercase tracking-widest mb-3">{text.trustScore}</div>
-          <div className={`text-5xl font-black ${score >= 80 ? 'text-emerald-400' : score >= 60 ? 'text-amber-400' : 'text-rose-400'}`} style={{ fontFamily: 'Outfit' }}>{score}</div>
-          <div className="text-[10px] text-slate-600 font-bold mt-1">/ 100</div>
-        </div>
-        <div className="rounded-2xl bg-slate-800/50 border border-slate-700/50 p-6 text-center hover:border-blue-500/30 transition-colors">
-          <div className="text-[11px] font-bold text-slate-500 uppercase tracking-widest mb-3">{text.jobs}</div>
-          <div className="text-5xl font-black text-white" style={{ fontFamily: 'Outfit' }}>{w.jobsCompleted || 0}</div>
-          <div className="text-[10px] text-slate-600 font-bold mt-1">completed</div>
-        </div>
-        <div className="rounded-2xl bg-slate-800/50 border border-slate-700/50 p-6 text-center hover:border-emerald-500/30 transition-colors">
-          <div className="text-[11px] font-bold text-emerald-500/70 uppercase tracking-widest mb-3">{text.earnings}</div>
-          <div className="text-4xl font-black text-emerald-400" style={{ fontFamily: 'Outfit' }}>₹{(w.earnings || 0).toLocaleString()}</div>
-          <div className="text-[10px] text-slate-600 font-bold mt-1">total</div>
+        <div className="bg-slate-800/50 border border-slate-700/50 px-4 py-2 rounded-xl flex items-center gap-3">
+          <span className="text-2xl">{skillIcon}</span>
+          <div>
+            <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest block">Primary Skill</span>
+            <span className="text-white font-bold">{w.skill}</span>
+          </div>
         </div>
       </div>
 
-      {/* Digital ID */}
-      <div className="rounded-2xl bg-slate-800/50 border border-slate-700/50 p-6 flex items-center gap-6">
-        <div className="bg-white p-3 rounded-xl shrink-0 shadow-lg">
-          <QRCodeSVG value={`https://daksh.app/verify/${w.id}`} size={72} level="H" />
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <div className="col-span-1 md:col-span-2 rounded-3xl bg-gradient-to-br from-slate-800 to-slate-900 border border-slate-700 p-8 relative overflow-hidden">
+          <div className="absolute top-0 right-0 p-6 opacity-10 text-8xl">🛡️</div>
+          <div className="relative z-10">
+            <div className="text-sm font-bold text-slate-400 uppercase tracking-widest mb-6">Trust Score</div>
+            <div className="flex items-baseline gap-4">
+              <span className={`text-8xl font-black ${score >= 80 ? 'text-emerald-400' : 'text-amber-400'}`} style={{ fontFamily: 'Outfit' }}>{score}</span>
+              <span className="text-xl font-bold text-slate-600">/ 100</span>
+            </div>
+            <p className="text-slate-400 mt-4 max-w-sm">This score automatically qualifies you for higher-paying jobs and equipment micro-loans.</p>
+          </div>
         </div>
-        <div className="flex-1 min-w-0">
-          <h3 className="text-base font-bold text-white mb-1">{text.idTitle}</h3>
-          <p className="text-sm text-slate-400 font-mono tracking-wider mb-2 truncate">{w.id}</p>
-          <span className="inline-flex items-center gap-1.5 text-[10px] font-bold text-blue-400 bg-blue-500/10 border border-blue-500/20 px-2.5 py-1 rounded-full uppercase tracking-wider">
-            <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M5 13l4 4L19 7" /></svg>
-            {text.verified}
-          </span>
+
+        <div className="rounded-3xl bg-slate-800 border border-slate-700 p-8 flex flex-col items-center justify-center text-center">
+          <div className="bg-white p-3 rounded-2xl shadow-xl mb-4">
+            <QRCodeSVG value={`https://daksh.app/verify/${w.id}`} size={100} level="H" />
+          </div>
+          <h3 className="text-white font-bold text-lg mb-1">Digital ID</h3>
+          <p className="text-slate-400 font-mono text-sm">{w.id}</p>
+          <div className="mt-3 inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-blue-500/10 border border-blue-500/20 text-blue-400 text-[10px] font-bold uppercase tracking-widest">
+            <span>✓</span> Verified Identity
+          </div>
         </div>
       </div>
 
-      {/* Quick Actions */}
-      <div className="grid grid-cols-2 gap-4">
-        <button
-          onClick={() => setActiveTab('feed')}
-          className="rounded-2xl bg-orange-500 hover:bg-orange-400 text-white font-bold py-5 text-lg transition-all hover:shadow-[0_8px_30px_rgba(249,115,22,0.3)] active:scale-[0.97]"
-        >
-          🔍 {text.feed}
-        </button>
-        <button
-          onClick={() => setActiveTab('active')}
-          className="rounded-2xl bg-slate-800 hover:bg-slate-700 text-white font-bold py-5 text-lg border border-slate-700 transition-all active:scale-[0.97]"
-        >
-          📋 {text.active} {activeJobs.length > 0 && `(${activeJobs.length})`}
-        </button>
+      <div className="grid grid-cols-2 gap-6">
+        <div className="rounded-3xl bg-slate-800 border border-slate-700 p-8">
+          <div className="text-slate-400 text-xs font-bold uppercase tracking-widest mb-4">Jobs Completed</div>
+          <div className="text-5xl font-black text-white" style={{ fontFamily: 'Outfit' }}>{liveWorker.jobsCompleted || 0}</div>
+        </div>
+        <div className="rounded-3xl bg-slate-800 border border-slate-700 p-8">
+          <div className="text-emerald-500/70 text-xs font-bold uppercase tracking-widest mb-4">Total Earnings</div>
+          <div className="text-5xl font-black text-emerald-400" style={{ fontFamily: 'Outfit' }}>₹{(liveWorker.earnings || 0).toLocaleString()}</div>
+        </div>
       </div>
     </div>
   );
 
-  /* ─────────────────── JOB FEED TAB ─────────────────── */
+  /* ─────────────────── FEED TAB ─────────────────── */
   const renderFeed = () => (
-    <div className="space-y-6 animate-in">
-      <div className="flex items-center justify-between">
-        <h2 className="text-2xl font-black text-white" style={{ fontFamily: 'Outfit' }}>
-          {text.newMatches}
-        </h2>
-        {jobs.length > 0 && (
-          <span className="text-xs font-bold text-slate-500 bg-slate-800 px-3 py-1.5 rounded-full tracking-widest">{jobs.length} JOBS</span>
-        )}
+    <div className="space-y-6 animate-in slide-in-from-bottom-4 duration-500 w-full">
+      <div className="flex items-center justify-between mb-8">
+        <h2 className="text-3xl font-black text-white" style={{ fontFamily: 'Outfit' }}>AI Recommended Jobs</h2>
+        {jobs.length > 0 && <span className="text-xs font-bold text-orange-400 bg-orange-500/10 border border-orange-500/20 px-3 py-1 rounded-full uppercase tracking-widest">{jobs.length} Matches</span>}
       </div>
 
       {loadingJobs ? (
-        <div className="rounded-2xl border border-slate-700/50 bg-slate-800/30 p-16 flex flex-col items-center justify-center">
-          <div className="w-10 h-10 rounded-full border-3 border-slate-700 border-t-orange-500 animate-spin mb-4"></div>
-          <p className="text-sm font-bold text-slate-500 uppercase tracking-widest">Scanning...</p>
+        <div className="p-16 text-center">
+          <div className="w-8 h-8 border-4 border-slate-700 border-t-orange-500 rounded-full animate-spin mx-auto mb-4"></div>
+          <p className="text-slate-500 font-bold uppercase tracking-widest text-sm">Scanning Market...</p>
         </div>
       ) : jobs.length === 0 ? (
-        <div className="rounded-2xl border border-slate-700/50 bg-slate-800/30 p-16 text-center">
-          <div className="text-5xl mb-4">🔍</div>
-          <p className="text-lg text-slate-500 font-bold">{text.noJobs}</p>
-          <p className="text-sm text-slate-600 mt-2">New jobs appear automatically</p>
+        <div className="p-16 text-center bg-slate-800/50 rounded-3xl border border-slate-700 border-dashed">
+          <div className="text-4xl mb-4">🔍</div>
+          <p className="text-slate-400 font-bold">No jobs matching your profile right now.</p>
         </div>
       ) : (
-        jobs.map((job) => {
+        jobs.map(job => {
           const isMatch = job.skill_needed.toLowerCase() === w.skill.toLowerCase();
           const matchPercent = isMatch ? Math.min(99, 80 + Math.floor(score / 5)) : Math.floor(30 + Math.random() * 20);
 
           return (
-            <div key={job.id} className="group rounded-2xl border border-slate-700/50 bg-slate-800/30 hover:bg-slate-800/60 p-6 sm:p-8 transition-all duration-300 hover:border-slate-600">
-
-              {/* Header */}
-              <div className="flex items-center justify-between mb-5">
-                <span className={`text-[11px] font-bold tracking-widest px-3 py-1.5 rounded-full ${isMatch ? 'text-orange-400 bg-orange-500/10 border border-orange-500/20' : 'text-slate-500 bg-slate-800 border border-slate-700'}`}>
-                  {isMatch && '● '}{matchPercent}% {isMatch ? text.matchTag : text.otherTag}
+            <div key={job.id} className="bg-slate-800 border border-slate-700 rounded-3xl p-8 hover:border-slate-500 transition-colors">
+              <div className="flex items-center justify-between mb-6">
+                <span className={`text-[10px] font-black uppercase tracking-widest px-3 py-1.5 rounded-lg ${isMatch ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-slate-700 text-slate-400'}`}>
+                  {matchPercent}% Match
                 </span>
-                <span className="text-xs text-slate-500 font-medium">{job.contractor_name}</span>
+                <span className="text-sm font-bold text-slate-500">{job.contractor_name}</span>
               </div>
-
-              {/* Title */}
-              <h3 className="text-2xl sm:text-3xl font-black text-white mb-2 group-hover:text-orange-300 transition-colors">{job.title}</h3>
-              <p className="text-sm text-slate-500 flex items-center gap-2 mb-6">
-                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
-                {job.location}
+              
+              <h3 className="text-2xl font-black text-white mb-2">{job.title}</h3>
+              <p className="text-slate-400 flex items-center gap-2 mb-6 text-sm">
+                <span>📍</span> {job.location}
               </p>
 
-              {/* Info row */}
-              <div className="flex items-center gap-6 mb-6 text-sm">
+              <div className="flex items-center gap-8 mb-8 bg-slate-900/50 p-4 rounded-2xl">
                 <div>
-                  <span className="text-slate-600 text-[10px] font-bold uppercase tracking-widest block">Wage</span>
-                  <span className="text-emerald-400 font-black text-lg">₹{job.wage_per_day}<span className="text-slate-600 text-xs font-medium">{text.perDay}</span></span>
+                  <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Wage</div>
+                  <div className="text-xl font-black text-emerald-400">₹{job.wage_per_day}<span className="text-xs text-slate-600 ml-1">/day</span></div>
                 </div>
-                <div className="w-px h-8 bg-slate-700"></div>
                 <div>
-                  <span className="text-slate-600 text-[10px] font-bold uppercase tracking-widest block">Duration</span>
-                  <span className="text-white font-black text-lg">{job.duration_days} <span className="text-slate-600 text-xs font-medium">{text.days}</span></span>
+                  <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Duration</div>
+                  <div className="text-xl font-black text-white">{job.duration_days} <span className="text-xs text-slate-600">days</span></div>
                 </div>
-                <div className="w-px h-8 bg-slate-700"></div>
                 <div>
-                  <span className="text-slate-600 text-[10px] font-bold uppercase tracking-widest block">Workers</span>
-                  <span className="text-blue-400 font-black text-lg">{job.workers_needed}</span>
+                  <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Need</div>
+                  <div className="text-xl font-black text-blue-400">{job.workers_needed} <span className="text-xs text-slate-600">workers</span></div>
                 </div>
               </div>
 
-              {/* Action */}
-              <div className="flex gap-3">
-                <button
-                  onClick={() => handleAcceptJob(job.id)}
-                  disabled={processingId === job.id}
-                  className={`flex-1 bg-white text-slate-900 hover:bg-orange-500 hover:text-white font-bold py-3.5 rounded-xl transition-all duration-300 active:scale-[0.97] text-base ${processingId === job.id ? 'opacity-50 cursor-wait' : ''}`}
-                >
-                  {processingId === job.id ? '⏳ Accepting...' : `✓ ${text.accept}`}
-                </button>
-                <button className="w-14 flex items-center justify-center rounded-xl border border-slate-700 text-slate-600 hover:text-rose-400 hover:border-rose-500/50 transition-all">
-                  <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" /></svg>
-                </button>
-              </div>
+              <button
+                onClick={() => handleAcceptJob(job.id)}
+                disabled={processingId === job.id}
+                className="w-full bg-white hover:bg-orange-500 text-slate-900 hover:text-white font-black py-4 rounded-xl transition-all active:scale-[0.98]"
+              >
+                {processingId === job.id ? 'ACCEPTING...' : 'ACCEPT JOB INSTANTLY'}
+              </button>
             </div>
-          );
+          )
         })
       )}
     </div>
   );
 
-  /* ─────────────────── ACTIVE WORK TAB ─────────────────── */
-  const renderActive = () => (
-    <div className="space-y-6 animate-in">
-      <h2 className="text-2xl font-black text-white" style={{ fontFamily: 'Outfit' }}>
-        {text.active}
-      </h2>
+  /* ─────────────────── ACTIVE TAB ─────────────────── */
+  const completedJobs = activeJobs.filter(j => j.application_status === 'completed');
+  const workingJobs = activeJobs.filter(j => j.application_status !== 'completed');
 
-      {activeJobs.length === 0 ? (
-        <div className="rounded-2xl border border-slate-700/50 bg-slate-800/30 p-16 text-center">
-          <div className="text-5xl mb-4">📋</div>
-          <p className="text-lg text-slate-500 font-bold">No active work</p>
-          <p className="text-sm text-slate-600 mt-2 mb-6">Accept a job from the feed to get started</p>
-          <button onClick={() => setActiveTab('feed')} className="bg-orange-500 hover:bg-orange-400 text-white font-bold px-8 py-3 rounded-xl transition-all">
-            Browse Jobs →
-          </button>
+  const renderActive = () => (
+    <div className="space-y-6 animate-in slide-in-from-bottom-4 duration-500 w-full">
+      <h2 className="text-3xl font-black text-white mb-8" style={{ fontFamily: 'Outfit' }}>Active Contracts</h2>
+      {workingJobs.length === 0 ? (
+        <div className="p-16 text-center bg-slate-800/50 rounded-3xl border border-slate-700 border-dashed">
+          <div className="text-4xl mb-4">📋</div>
+          <p className="text-slate-400 font-bold text-lg">No active work right now</p>
+          <p className="text-slate-600 mt-2">Accept a job from the Find Work tab to start earning</p>
         </div>
       ) : (
-        activeJobs.map(job => (
-          <div key={job.id} className="rounded-2xl border border-emerald-500/20 bg-emerald-500/5 p-6 sm:p-8">
-            {/* Status */}
-            <div className="flex items-center justify-between mb-6">
-              <span className="text-[11px] font-bold text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-3 py-1.5 rounded-full tracking-widest">
-                ● ACCEPTED
-              </span>
-              <span className="text-xs text-slate-500 font-medium">{job.contractor_name}</span>
-            </div>
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          {workingJobs.map(job => {
+            const totalEarning = job.wage_per_day * job.duration_days;
+            return (
+              <div key={job.id} className="bg-slate-800 border border-emerald-500/20 rounded-3xl p-8 relative overflow-hidden hover:border-emerald-500/40 transition-colors">
+                <div className="absolute top-0 left-0 w-1.5 h-full bg-emerald-500"></div>
+                <div className="flex justify-between items-start mb-5">
+                  <span className="text-[10px] font-black uppercase tracking-widest px-3 py-1.5 rounded-lg bg-emerald-500/20 text-emerald-400">
+                    ● ACTIVE
+                  </span>
+                  <span className="text-sm font-bold text-slate-500">{job.contractor_name}</span>
+                </div>
+                
+                <h3 className="text-2xl font-black text-white mb-2">{job.title}</h3>
+                <p className="text-slate-400 text-sm mb-5 flex items-center gap-2"><span>📍</span>{job.location}</p>
 
-            <h3 className="text-2xl sm:text-3xl font-black text-white mb-2">{job.title}</h3>
+                <div className="grid grid-cols-3 gap-3 mb-5 bg-slate-900/50 p-4 rounded-2xl">
+                  <div>
+                    <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Wage</div>
+                    <div className="text-lg font-black text-emerald-400">₹{job.wage_per_day}<span className="text-xs text-slate-600">/day</span></div>
+                  </div>
+                  <div>
+                    <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Duration</div>
+                    <div className="text-lg font-black text-white">{job.duration_days} days</div>
+                  </div>
+                  <div>
+                    <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Total</div>
+                    <div className="text-lg font-black text-amber-400">₹{totalEarning.toLocaleString()}</div>
+                  </div>
+                </div>
 
-            <div className="flex items-center gap-4 text-sm mb-8">
-              <span className="text-emerald-400 font-bold text-lg">₹{job.wage_per_day}/day</span>
-              <span className="text-slate-600">•</span>
-              <span className="text-slate-400">{job.location}</span>
-              <span className="text-slate-600">•</span>
-              <span className="text-slate-400">{job.duration_days} {text.days}</span>
-            </div>
+                <div className="bg-blue-500/5 border border-blue-500/20 rounded-2xl p-4 mb-5">
+                  <div className="text-[10px] font-bold text-blue-400 uppercase tracking-widest mb-2">📅 Shift Schedule</div>
+                  <div className="text-white font-bold">08:00 AM — 05:00 PM</div>
+                  <div className="text-slate-400 text-xs mt-1">Mon-Sat • 1hr Lunch Break (12:00 PM)</div>
+                </div>
 
-            <div className="grid grid-cols-2 gap-3">
-              <button className="bg-emerald-500 hover:bg-emerald-400 text-white font-bold py-4 rounded-xl transition-all flex items-center justify-center gap-2 text-base active:scale-[0.97]">
-                📞 Call Contractor
-              </button>
-              <button className="bg-slate-800 hover:bg-slate-700 text-white font-bold py-4 rounded-xl border border-slate-700 transition-all flex items-center justify-center gap-2 text-base active:scale-[0.97]">
-                🗺️ Navigate
-              </button>
-            </div>
+                <div className="flex gap-3">
+                  <button className="flex-1 bg-emerald-500 hover:bg-emerald-400 text-slate-900 font-black py-3 rounded-xl flex justify-center items-center gap-2 text-sm transition-all">
+                    <span>📞</span> Call Contractor
+                  </button>
+                  <button className="flex-1 bg-slate-700 hover:bg-slate-600 text-white font-black py-3 rounded-xl flex justify-center items-center gap-2 text-sm transition-all">
+                    <span>🗺️</span> Navigate
+                  </button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Completed Jobs History */}
+      {completedJobs.length > 0 && (
+        <>
+          <h3 className="text-xl font-black text-slate-500 mt-10 mb-4" style={{ fontFamily: 'Outfit' }}>Completed Work</h3>
+          <div className="space-y-3">
+            {completedJobs.map(job => (
+              <div key={job.id} className="bg-slate-800/50 border border-slate-700/50 rounded-2xl p-5 flex justify-between items-center">
+                <div>
+                  <div className="text-white font-bold">{job.title}</div>
+                  <div className="text-slate-500 text-sm">{job.contractor_name} • {job.location}</div>
+                </div>
+                <div className="text-right">
+                  <div className="text-emerald-400 font-black">+₹{(job.wage_per_day * job.duration_days).toLocaleString()}</div>
+                  <span className="text-[10px] font-bold text-slate-600 uppercase tracking-widest">✅ Paid</span>
+                </div>
+              </div>
+            ))}
           </div>
-        ))
+        </>
       )}
     </div>
   );
 
+  /* ─────────────────── WALLET TAB (ESCROW) ─────────────────── */
+  const lockedEscrow = workingJobs.reduce((sum, j) => sum + (j.wage_per_day * j.duration_days), 0);
+  const realBalance = liveWorker.earnings || 0;
+
+  const renderWallet = () => (
+    <div className="space-y-6 animate-in slide-in-from-bottom-4 duration-500 w-full">
+      <div className="flex items-center justify-between mb-8">
+        <h2 className="text-3xl font-black text-white" style={{ fontFamily: 'Outfit' }}>Escrow Wallet</h2>
+        <span className="bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 px-3 py-1 rounded-full text-xs font-bold uppercase tracking-widest flex items-center gap-2">
+          <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span> Smart Contract Active
+        </span>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+        {/* Available Balance */}
+        <div className="bg-gradient-to-br from-slate-800 to-slate-900 border border-slate-700 rounded-3xl p-8 relative overflow-hidden">
+          <div className="absolute -right-20 -top-20 w-64 h-64 bg-emerald-500/10 rounded-full blur-3xl"></div>
+          <div className="relative z-10">
+            <div className="text-sm font-bold text-slate-400 uppercase tracking-widest mb-2">Available Balance</div>
+            <div className="text-6xl font-black text-emerald-400 mb-4" style={{ fontFamily: 'Outfit' }}>₹{realBalance.toLocaleString()}</div>
+            <div className="flex gap-3">
+              <button className="bg-white hover:bg-slate-200 text-slate-900 font-black px-5 py-3 rounded-xl flex items-center gap-2 text-sm transition-all">
+                <span>🏦</span> Withdraw to Bank
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* Locked Escrow */}
+        <div className="bg-gradient-to-br from-slate-800 to-slate-900 border border-amber-500/20 rounded-3xl p-8 relative overflow-hidden">
+          <div className="absolute -right-20 -top-20 w-64 h-64 bg-amber-500/10 rounded-full blur-3xl"></div>
+          <div className="relative z-10">
+            <div className="text-sm font-bold text-slate-400 uppercase tracking-widest mb-2">Locked in Escrow</div>
+            <div className="text-6xl font-black text-amber-400 mb-4" style={{ fontFamily: 'Outfit' }}>₹{lockedEscrow.toLocaleString()}</div>
+            <p className="text-slate-500 text-sm">Auto-released when contractor marks work complete</p>
+          </div>
+        </div>
+      </div>
+
+      <h3 className="text-sm font-bold text-slate-500 uppercase tracking-widest mb-4">Active Escrow Contracts</h3>
+      <div className="space-y-4">
+        {workingJobs.length === 0 ? (
+          <div className="bg-slate-800/50 rounded-3xl p-12 text-center border border-slate-700 border-dashed">
+            <p className="text-slate-500">No funds currently locked in escrow.</p>
+          </div>
+        ) : (
+          workingJobs.map(job => {
+            const total = job.wage_per_day * job.duration_days;
+            return (
+              <div key={job.id} className="bg-slate-800 border border-slate-700 rounded-2xl p-6 flex justify-between items-center">
+                <div>
+                  <div className="text-white font-bold text-lg mb-1">{job.title}</div>
+                  <div className="text-slate-400 text-sm">{job.contractor_name} • Payout on completion</div>
+                </div>
+                <div className="text-right">
+                  <div className="text-amber-400 font-black text-xl flex items-center gap-2 justify-end">
+                    <span>🔒</span> ₹{total.toLocaleString()}
+                  </div>
+                  <div className="text-[10px] text-slate-500 uppercase tracking-widest font-bold mt-1">Locked in Escrow</div>
+                </div>
+              </div>
+            )
+          })
+        )}
+      </div>
+
+      {/* Payment History */}
+      {completedJobs.length > 0 && (
+        <>
+          <h3 className="text-sm font-bold text-emerald-500 uppercase tracking-widest mt-8 mb-4">Payment History</h3>
+          <div className="space-y-3">
+            {completedJobs.map(job => (
+              <div key={job.id} className="bg-emerald-500/5 border border-emerald-500/10 rounded-2xl p-5 flex justify-between items-center">
+                <div>
+                  <div className="text-white font-bold">{job.title}</div>
+                  <div className="text-slate-500 text-sm">{job.contractor_name}</div>
+                </div>
+                <div className="text-emerald-400 font-black text-lg">+₹{(job.wage_per_day * job.duration_days).toLocaleString()}</div>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  );
+
+  /* ─────────────────── GROWTH TAB (INCOME SIMULATOR) ─────────────────── */
+  const renderGrowth = () => {
+    // Math for the simulator
+    const baseWage = 800;
+    const skillMultiplier = simSkill === 'Supervisor' ? 1.7 : 1.0;
+    const toolMultiplier = simLoan ? 1.2 : 1.0;
+    const monthlyDays = 25;
+    
+    const monthlyIncome = baseWage * skillMultiplier * toolMultiplier * monthlyDays;
+    
+    const chartData = [
+      { name: 'Current', value: baseWage * 25 },
+      { name: 'Year 1', value: monthlyIncome * 12 },
+      { name: 'Year 3', value: monthlyIncome * 12 * 3.5 }, // assume slight compound growth
+      { name: 'Year 5', value: monthlyIncome * 12 * 6 },
+    ];
+
+    return (
+      <div className="space-y-8 animate-in slide-in-from-bottom-4 duration-500 w-full">
+        <div className="flex items-center justify-between">
+          <div>
+            <h2 className="text-3xl font-black text-white" style={{ fontFamily: 'Outfit' }}>See Your Future</h2>
+            <p className="text-slate-400 mt-1">Play with the sliders to see how skills and tools increase your wealth.</p>
+          </div>
+          {score >= 80 && (
+            <div className="bg-amber-500/10 border border-amber-500/30 px-4 py-2 rounded-xl text-amber-400 text-xs font-bold uppercase tracking-widest flex items-center gap-2 shadow-[0_0_20px_rgba(245,158,11,0.15)]">
+              <span>🔓</span> Micro-Loan Unlocked
+            </div>
+          )}
+        </div>
+
+        <div className="grid md:grid-cols-12 gap-8">
+          {/* Controls */}
+          <div className="md:col-span-5 space-y-8">
+            <div className="bg-slate-800 border border-slate-700 rounded-3xl p-6">
+              <div className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-4">Skill Level</div>
+              <div className="flex gap-2">
+                <button 
+                  onClick={() => setSimSkill('Current')}
+                  className={`flex-1 py-3 rounded-xl font-bold text-sm transition-all ${simSkill === 'Current' ? 'bg-blue-500 text-white shadow-[0_0_15px_rgba(59,130,246,0.3)]' : 'bg-slate-900 text-slate-400 border border-slate-700'}`}
+                >
+                  {w.skill}
+                </button>
+                <button 
+                  onClick={() => setSimSkill('Supervisor')}
+                  className={`flex-1 py-3 rounded-xl font-bold text-sm transition-all ${simSkill === 'Supervisor' ? 'bg-blue-500 text-white shadow-[0_0_15px_rgba(59,130,246,0.3)]' : 'bg-slate-900 text-slate-400 border border-slate-700'}`}
+                >
+                  Supervisor
+                </button>
+              </div>
+            </div>
+
+            <div className="bg-slate-800 border border-slate-700 rounded-3xl p-6">
+              <div className="flex justify-between items-center mb-4">
+                <div className="text-xs font-bold text-slate-500 uppercase tracking-widest">Own Equipment</div>
+                {score < 80 && <span className="text-[10px] text-rose-400 font-bold bg-rose-500/10 px-2 py-1 rounded">Score &lt; 80 (Locked)</span>}
+              </div>
+              <div className="flex gap-2">
+                <button 
+                  onClick={() => setSimLoan(false)}
+                  className={`flex-1 py-3 rounded-xl font-bold text-sm transition-all ${!simLoan ? 'bg-emerald-500 text-white shadow-[0_0_15px_rgba(16,185,129,0.3)]' : 'bg-slate-900 text-slate-400 border border-slate-700'}`}
+                >
+                  Contractor Tools
+                </button>
+                <button 
+                  onClick={() => {
+                    if (score >= 80) setSimLoan(true);
+                  }}
+                  className={`flex-1 py-3 rounded-xl font-bold text-sm transition-all ${simLoan ? 'bg-emerald-500 text-white shadow-[0_0_15px_rgba(16,185,129,0.3)]' : 'bg-slate-900 text-slate-400 border border-slate-700'} ${score < 80 ? 'opacity-50 cursor-not-allowed' : ''}`}
+                >
+                  Get Loan
+                </button>
+              </div>
+            </div>
+
+            <div className="bg-gradient-to-r from-orange-500 to-rose-500 rounded-3xl p-6 text-white shadow-[0_10px_30px_rgba(249,115,22,0.3)]">
+              <div className="text-orange-100 text-xs font-bold uppercase tracking-widest mb-1">Projected Monthly</div>
+              <div className="text-4xl font-black mb-2">₹{monthlyIncome.toLocaleString()}</div>
+              <div className="text-sm font-medium text-rose-100">+ {Math.round((monthlyIncome / (baseWage * 25) - 1) * 100)}% increase</div>
+            </div>
+          </div>
+
+          {/* Chart */}
+          <div className="md:col-span-7 bg-slate-800 border border-slate-700 rounded-3xl p-6" style={{minHeight: '400px', height: '400px'}}>
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={chartData} margin={{ top: 20, right: 20, left: 0, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#334155" vertical={false} />
+                <XAxis dataKey="name" stroke="#94a3b8" tick={{ fill: '#94a3b8', fontSize: 12, fontWeight: 'bold' }} axisLine={false} tickLine={false} />
+                <YAxis stroke="#94a3b8" tick={{ fill: '#94a3b8', fontSize: 12 }} axisLine={false} tickLine={false} tickFormatter={(val) => `₹${val/1000}k`} />
+                <Tooltip 
+                  cursor={{ fill: '#1e293b' }}
+                  contentStyle={{ backgroundColor: '#0f172a', border: '1px solid #334155', borderRadius: '12px', color: '#fff', fontWeight: 'bold' }}
+                  formatter={(value) => [`₹${value.toLocaleString()}`, 'Earnings']}
+                />
+                <Bar dataKey="value" radius={[6, 6, 0, 0]}>
+                  {chartData.map((entry, index) => (
+                    <Cell key={`cell-${index}`} fill={index === 0 ? '#475569' : '#f97316'} />
+                  ))}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div className="w-full min-h-screen bg-[#0f172a] z-10 relative">
-      {/* Content Area */}
-      <div className="max-w-2xl mx-auto px-4 sm:px-6 pt-6 pb-28">
+    <div className="flex h-screen bg-[#0f172a] text-slate-200 overflow-hidden font-sans">
+      
+      {showSafetyWarning && renderSafetyWarning()}
+
+      {/* ── SIDEBAR ── */}
+      <aside className="w-64 bg-slate-900 border-r border-slate-800 flex flex-col hidden md:flex shrink-0 z-20">
+        <div className="p-6">
+          <div className="flex items-center gap-3 mb-8">
+            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-orange-400 to-orange-600 flex items-center justify-center shadow-[0_0_15px_rgba(249,115,22,0.4)]">
+              <span className="text-white font-black text-xl" style={{fontFamily: 'Outfit'}}>D</span>
+            </div>
+            <h1 className="text-2xl font-black text-white" style={{fontFamily: 'Outfit'}}>DAKSH</h1>
+          </div>
+
+          <nav className="space-y-2">
+            {tabs.map(tab => (
+              <button
+                key={tab.id}
+                onClick={() => setActiveTab(tab.id)}
+                className={`w-full flex items-center gap-4 px-4 py-3.5 rounded-xl text-sm font-bold transition-all ${
+                  activeTab === tab.id 
+                    ? 'bg-slate-800 text-white' 
+                    : 'text-slate-500 hover:bg-slate-800/50 hover:text-slate-300'
+                }`}
+              >
+                <span className="text-xl">{tab.icon}</span>
+                <span>{tab.label}</span>
+                {tab.badge > 0 && (
+                  <span className="ml-auto bg-orange-500 text-white text-[10px] px-2 py-0.5 rounded-full shadow-[0_0_10px_rgba(249,115,22,0.5)]">
+                    {tab.badge}
+                  </span>
+                )}
+              </button>
+            ))}
+          </nav>
+        </div>
+
+        <div className="mt-auto p-6">
+          <button 
+            onClick={onLogout}
+            className="w-full flex items-center gap-4 px-4 py-3.5 rounded-xl text-sm font-bold text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 transition-all"
+          >
+            <span className="text-xl">🚪</span>
+            <span>Logout</span>
+          </button>
+        </div>
+      </aside>
+
+      {/* ── MAIN CONTENT ── */}
+      <main className="flex-1 overflow-y-auto overflow-x-hidden p-6 md:p-12 relative">
+        {/* Mobile Nav Top Bar */}
+        <div className="md:hidden flex items-center justify-between mb-8 pb-4 border-b border-slate-800">
+          <div className="flex items-center gap-2">
+            <div className="w-8 h-8 rounded-lg bg-orange-500 flex items-center justify-center">
+              <span className="text-white font-black text-sm">D</span>
+            </div>
+            <h1 className="text-xl font-black text-white">DAKSH</h1>
+          </div>
+          <button className="text-slate-400" onClick={onLogout}>Logout</button>
+        </div>
+
+        {/* Content Router */}
         {activeTab === 'home' && renderHome()}
         {activeTab === 'feed' && renderFeed()}
         {activeTab === 'active' && renderActive()}
-      </div>
+        {activeTab === 'wallet' && renderWallet()}
+        {activeTab === 'growth' && renderGrowth()}
+      </main>
 
-      {/* ── BOTTOM NAVIGATION BAR ── */}
-      <nav className="fixed bottom-0 left-0 right-0 bg-slate-900/95 backdrop-blur-lg border-t border-slate-800 z-50">
-        <div className="max-w-2xl mx-auto flex items-center justify-around py-2">
-          {tabs.map(tab => (
-            <button
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id)}
-              className={`relative flex flex-col items-center gap-1 px-6 py-2.5 rounded-xl transition-all duration-200 ${
-                activeTab === tab.id
-                  ? 'text-orange-400'
-                  : 'text-slate-500 hover:text-slate-300'
-              }`}
-            >
-              {tab.icon}
-              <span className="text-[11px] font-bold tracking-wide">{tab.label}</span>
-              {tab.badge > 0 && (
-                <span className="absolute -top-0.5 right-2 min-w-[18px] h-[18px] flex items-center justify-center rounded-full bg-orange-500 text-white text-[10px] font-black px-1">
-                  {tab.badge}
-                </span>
-              )}
-              {activeTab === tab.id && (
-                <span className="absolute -bottom-2 w-8 h-1 rounded-full bg-orange-500"></span>
-              )}
-            </button>
-          ))}
-          {/* Logout in nav */}
+      {/* Mobile Bottom Nav (retained for mobile layout only) */}
+      <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-slate-900/95 backdrop-blur-md border-t border-slate-800 z-50 flex justify-around p-2">
+        {tabs.map(tab => (
           <button
-            onClick={onLogout}
-            className="flex flex-col items-center gap-1 px-6 py-2.5 rounded-xl text-slate-600 hover:text-rose-400 transition-all"
+            key={tab.id}
+            onClick={() => setActiveTab(tab.id)}
+            className={`flex flex-col items-center gap-1 p-2 rounded-xl ${activeTab === tab.id ? 'text-white' : 'text-slate-500'}`}
           >
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" /></svg>
-            <span className="text-[11px] font-bold tracking-wide">Logout</span>
+            <span className="text-xl relative">
+              {tab.icon}
+              {tab.badge > 0 && <span className="absolute -top-1 -right-2 bg-orange-500 w-3 h-3 rounded-full border-2 border-slate-900"></span>}
+            </span>
+            <span className="text-[9px] font-bold tracking-wider truncate max-w-[60px]">{tab.label.split(' ')[0]}</span>
           </button>
-        </div>
+        ))}
       </nav>
     </div>
   );

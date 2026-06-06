@@ -154,3 +154,94 @@ async def get_worker_applications(worker_id: str):
     conn.close()
     
     return {"success": True, "applications": [dict(r) for r in rows]}
+
+
+@router.get("/{job_id}/applicants")
+async def get_job_applicants(job_id: str):
+    """Get all workers who applied/accepted a specific job, with their details."""
+    conn = db.get_db()
+    rows = conn.execute(
+        """SELECT w.id as worker_id, w.name, w.skill, w.phone, w.trust_score,
+                  a.status as application_status, a.applied_at, a.id as application_id
+           FROM job_applications a
+           JOIN workers w ON a.worker_id = w.id
+           WHERE a.job_id = ?
+           ORDER BY a.applied_at DESC""",
+        (job_id,)
+    ).fetchall()
+    conn.close()
+    return {"success": True, "job_id": job_id, "applicants": [dict(r) for r in rows]}
+
+
+@router.post("/{job_id}/complete")
+async def complete_job_and_pay(job_id: str):
+    """
+    Mark a job as completed and transfer escrow wages to all accepted workers.
+    This closes the full payment loop.
+    """
+    conn = db.get_db()
+    
+    # Get the job
+    job = conn.execute("SELECT * FROM jobs WHERE id = ?", (job_id,)).fetchone()
+    if not job:
+        conn.close()
+        raise HTTPException(status_code=404, detail="Job not found")
+    
+    job = dict(job)
+    total_pay_per_worker = job["wage_per_day"] * job["duration_days"]
+    
+    # Get all accepted workers for this job
+    workers = conn.execute(
+        """SELECT w.id as worker_id, a.id as application_id
+           FROM job_applications a
+           JOIN workers w ON a.worker_id = w.id
+           WHERE a.job_id = ? AND a.status = 'accepted'""",
+        (job_id,)
+    ).fetchall()
+    
+    paid_workers = []
+    for w in workers:
+        w = dict(w)
+        # Transfer escrow to worker earnings
+        conn.execute(
+            """UPDATE workers 
+               SET earnings = earnings + ?,
+                   jobs_completed = jobs_completed + 1,
+                   trust_score = MIN(100, trust_score + 2)
+               WHERE id = ?""",
+            (total_pay_per_worker, w["worker_id"])
+        )
+        # Mark application as completed
+        conn.execute(
+            "UPDATE job_applications SET status = 'completed' WHERE id = ?",
+            (w["application_id"],)
+        )
+        paid_workers.append(w["worker_id"])
+    
+    # Mark the job as closed
+    conn.execute("UPDATE jobs SET status = 'closed' WHERE id = ?", (job_id,))
+    conn.commit()
+    conn.close()
+    
+    return {
+        "success": True, 
+        "message": f"Job completed. ₹{total_pay_per_worker} paid to {len(paid_workers)} worker(s).",
+        "total_per_worker": total_pay_per_worker,
+        "paid_workers": paid_workers,
+    }
+
+
+@router.get("/contractor/{contractor_name}/posted")
+async def get_contractor_jobs(contractor_name: str):
+    """Get all jobs posted by a contractor, with applicant counts."""
+    conn = db.get_db()
+    rows = conn.execute(
+        """SELECT j.*, 
+                  (SELECT COUNT(*) FROM job_applications a WHERE a.job_id = j.id) as applicant_count
+           FROM jobs j
+           WHERE j.contractor_name = ?
+           ORDER BY j.created_at DESC""",
+        (contractor_name,)
+    ).fetchall()
+    conn.close()
+    return {"success": True, "jobs": [dict(r) for r in rows]}
