@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import VoiceRecorder from './VoiceRecorder';
 import WorkerProfile from './WorkerProfile';
 
-const API_BASE = 'http://localhost:8000';
+const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:8000';
 
 const SKILLS = [
   { value: 'Mason', icon: '🧱', hi: 'राजमिस्त्री', te: 'మేస్త్రీ' },

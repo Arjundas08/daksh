@@ -3,7 +3,7 @@ import { QRCodeSVG } from 'qrcode.react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 import { translations } from '../utils/translations';
 
-const API_BASE = 'http://localhost:8000';
+const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:8000';
 
 export default function WorkerDashboard({ worker, language, setLanguage, onLogout }) {
   const [activeTab, setActiveTab] = useState('home');

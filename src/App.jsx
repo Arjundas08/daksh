@@ -6,7 +6,7 @@ import ContractorDashboard from './components/ContractorDashboard';
 import ContractorAuth from './components/ContractorAuth';
 import AgentCommandCenter from './components/AgentCommandCenter';
 
-const API_BASE = 'http://localhost:8000';
+const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:8000';
 
 /* ── Floating Particles Component ── */
 function Particles() {

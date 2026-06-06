@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import SafetyAudit from './SafetyAudit';
 
-const API_BASE = 'http://localhost:8000';
+const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:8000';
 
 const SKILLS = ['Mason', 'Carpenter', 'Electrician', 'Plumber', 'Painter', 'Helper', 'Welder', 'Fitter', 'Supervisor'];
 

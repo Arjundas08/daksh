@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 
-const API_BASE = 'http://localhost:8000';
+const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:8000';
 
 const AGENT_CONFIG = {
   ThekedaarAgent: { icon: '🔍', color: '#f97316', label: 'Thekedaar', desc: 'Auto Job-Worker Matching' },
