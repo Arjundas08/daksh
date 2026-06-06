@@ -82,8 +82,10 @@ export default function WorkerDashboard({ worker, language, setLanguage, onLogou
           const data = await res.json();
           if (data.current_weather) {
             setWeather(data.current_weather);
-            // Danger thresholds: Temp > 35C or Wind > 20 km/h
-            if (data.current_weather.temperature > 35 || data.current_weather.windspeed > 20) {
+            // Real construction safety thresholds: Temp > 40C (Extreme Heat) or Wind > 40 km/h (Scaffolding risk)
+            const temp = data.current_weather.temperature;
+            const wind = data.current_weather.windspeed;
+            if (temp > 40 || wind > 40) {
               setIsDanger(true);
             } else {
               setIsDanger(false);
@@ -178,37 +180,62 @@ export default function WorkerDashboard({ worker, language, setLanguage, onLogou
         })
       });
       const data = await res.json();
-      if (data.success) {
+      
+      if (data.success && data.reply) {
         setUstaadMessages(prev => [...prev, { role: 'ustaad', text: data.reply }]);
         
-        // Use Bhashini TTS for voice output
-        try {
-          const ttsRes = await fetch(`${API_BASE}/api/voice/synthesize`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ text: data.reply, language: language === 'te' ? 'te' : 'hi', gender: 'male' })
-          });
-          if (ttsRes.ok) {
-            const audioBlob = await ttsRes.blob();
-            const audioUrl = URL.createObjectURL(audioBlob);
-            const audio = new Audio(audioUrl);
-            audio.play().catch(() => {});
-          }
-        } catch(ttsErr) {
-          // Fallback to browser speech synthesis
-          if ("speechSynthesis" in window) {
-            const utterance = new SpeechSynthesisUtterance(data.reply);
-            const voices = window.speechSynthesis.getVoices();
-            const hiVoice = voices.find(v => v.lang.includes('hi') || v.lang.includes('IN'));
-            if (hiVoice) utterance.voice = hiVoice;
-            window.speechSynthesis.speak(utterance);
-          }
-        }
+        // Voice output using browser SpeechSynthesis in selected language
+        speakText(data.reply);
+      } else {
+        // API returned but no success
+        const fallback = `Bhai, abhi network slow hai. Tera trust score ${liveWorker.trustScore || 50} hai aur tune Rs.${(liveWorker.earnings || 0).toLocaleString()} kamaye hain. Mehnat kar, target hit hoga! 💪`;
+        setUstaadMessages(prev => [...prev, { role: 'ustaad', text: fallback }]);
+        speakText(fallback);
       }
     } catch(e) {
-      console.error(e);
+      console.error('Ustaad AI error:', e);
+      // Fallback so user ALWAYS gets a response
+      const fallback = `Arre Bhai! Network thoda slow hai, par tension mat le. Tera kaam chal raha hai, mehnat kar aur Rs.25,000 target zaroor hit hoga! 🔥`;
+      setUstaadMessages(prev => [...prev, { role: 'ustaad', text: fallback }]);
+      speakText(fallback);
     } finally {
       setUstaadLoading(false);
+    }
+  };
+
+  // Voice output function - uses high-quality Neural TTS (Edge TTS via backend)
+  const speakText = async (text) => {
+    // Stop any currently playing audio if we had a global reference (optional)
+    try {
+      const langMap = { en: 'en', hi: 'hi', te: 'te' };
+      const targetLang = langMap[language] || 'hi';
+      
+      const ttsRes = await fetch(`${API_BASE}/api/voice/synthesize`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: text, language: targetLang, gender: 'male' })
+      });
+      
+      if (ttsRes.ok) {
+        const audioBlob = await ttsRes.blob();
+        const audioUrl = URL.createObjectURL(audioBlob);
+        const audio = new Audio(audioUrl);
+        audio.play().catch(e => console.error("Audio play failed:", e));
+      } else {
+        throw new Error("TTS failed");
+      }
+    } catch(err) {
+      console.error("High quality TTS failed, falling back to browser:", err);
+      // Fallback to basic browser speech synthesis ONLY if backend fails
+      if ("speechSynthesis" in window) {
+        window.speechSynthesis.cancel();
+        const utterance = new SpeechSynthesisUtterance(text);
+        const voices = window.speechSynthesis.getVoices();
+        const targetLang = { en: 'en', hi: 'hi', te: 'te' }[language] || 'hi';
+        const matchedVoice = voices.find(v => v.lang.startsWith(targetLang)) || voices.find(v => v.lang.includes('IN')) || voices.find(v => v.lang.includes('hi'));
+        if (matchedVoice) utterance.voice = matchedVoice;
+        window.speechSynthesis.speak(utterance);
+      }
     }
   };
 
@@ -298,20 +325,20 @@ export default function WorkerDashboard({ worker, language, setLanguage, onLogou
             {/* AI Analysis */}
             <div className="space-y-3">
               <div className="flex items-start gap-3">
-                <span className={`${isDanger && temp > 35 ? 'text-rose-400' : 'text-emerald-400'} mt-0.5`}>🌡️</span>
+                <span className={`${temp > 40 ? 'text-rose-400' : 'text-emerald-400'} mt-0.5`}>🌡️</span>
                 <div>
                   <span className="text-white font-bold block">Local Temperature: {temp}°C</span>
                   <span className="text-slate-400 text-sm">
-                    {temp > 35 ? "Critical heat stroke risk detected today." : "Temperature is within safe working limits."}
+                    {temp > 40 ? "Critical heat stroke risk detected today." : temp > 35 ? "High heat. Stay hydrated." : "Temperature is within safe working limits."}
                   </span>
                 </div>
               </div>
               <div className="flex items-start gap-3">
-                <span className={`${isDanger && wind > 20 ? 'text-rose-400' : 'text-emerald-400'} mt-0.5`}>🌪️</span>
+                <span className={`${wind > 40 ? 'text-rose-400' : 'text-emerald-400'} mt-0.5`}>🌪️</span>
                 <div>
                   <span className="text-white font-bold block">Wind Speed: {wind} km/h</span>
                   <span className="text-slate-400 text-sm">
-                    {wind > 20 ? "High winds. Scaffolding work is highly unsafe." : "Wind conditions are stable."}
+                    {wind > 40 ? "High winds. Scaffolding work is highly unsafe." : "Wind conditions are stable."}
                   </span>
                 </div>
               </div>
@@ -334,9 +361,9 @@ export default function WorkerDashboard({ worker, language, setLanguage, onLogou
                 {isDanger ? 'Mandatory Directives' : 'Standard Protocol'}
               </h3>
               <ul className="space-y-2 text-slate-300 font-medium text-sm">
-                <li className="flex items-center gap-2"><span>✅</span> {isDanger ? 'Extra water break every 30 mins' : 'Stay hydrated regularly'}</li>
-                <li className="flex items-center gap-2"><span>✅</span> {isDanger ? 'Mandatory harness double-check due to wind' : 'Wear standard safety gear'}</li>
-                {isDanger && <li className="flex items-center gap-2"><span>✅</span> Site operations halt at 12:00 PM</li>}
+                <li className="flex items-center gap-2"><span>✅</span> {temp > 35 ? 'Extra water break every 30 mins' : 'Stay hydrated regularly'}</li>
+                <li className="flex items-center gap-2"><span>✅</span> {wind > 40 ? 'Mandatory harness double-check due to wind' : 'Wear standard safety gear'}</li>
+                {temp > 40 && <li className="flex items-center gap-2"><span>✅</span> Site operations halt at 12:00 PM</li>}
               </ul>
             </div>
 
@@ -775,97 +802,128 @@ export default function WorkerDashboard({ worker, language, setLanguage, onLogou
         </span>
       </button>
 
-      {/* ── USTAAD AI CHAT MODAL ── */}
+      {/* ── USTAAD AI FULL SCREEN EXPERIENCE ── */}
       {showUstaad && (
-        <div className="fixed inset-0 z-[200] flex items-end md:items-center justify-center md:p-6 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
-          <div className="w-full md:w-[440px] h-[85vh] md:h-[650px] bg-slate-900 md:rounded-3xl border border-slate-800 flex flex-col shadow-2xl overflow-hidden animate-in slide-in-from-bottom-8">
-            {/* Header */}
-            <div className="bg-gradient-to-r from-orange-500 to-amber-500 p-4 flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <div className="w-12 h-12 bg-white/20 rounded-2xl flex items-center justify-center text-3xl">
-                  👳🏾‍♂️
-                </div>
-                <div>
-                  <h3 className="text-white font-black text-lg leading-tight">Ustaad AI</h3>
-                  <p className="text-orange-100/70 text-[10px] uppercase font-bold tracking-widest">{t('ustaadMentor')}</p>
-                </div>
+        <div className="fixed inset-0 z-[200] bg-[#0a0e1a] flex flex-col animate-in fade-in duration-300">
+          
+          {/* ── HEADER BAR ── */}
+          <div className="shrink-0 bg-gradient-to-r from-[#0a0e1a] via-[#1a1205] to-[#0a0e1a] px-6 py-5 flex items-center justify-between border-b border-orange-500/10">
+            <div className="flex items-center gap-5">
+              <div className="w-14 h-14 bg-gradient-to-br from-orange-500 to-amber-600 rounded-2xl flex items-center justify-center text-3xl shadow-[0_0_30px_rgba(249,115,22,0.4)] border border-orange-400/30">
+                👳🏾‍♂️
               </div>
-              <button onClick={() => { setShowUstaad(false); window.speechSynthesis.cancel(); }} className="w-8 h-8 rounded-full bg-white/10 flex items-center justify-center text-white hover:bg-white/20 text-lg">✕</button>
-            </div>
-
-            {/* Financial Strip */}
-            <div className="bg-indigo-900/60 border-b border-indigo-500/20 px-4 py-2.5 flex items-center justify-between">
-              <div className="flex items-center gap-4">
-                <span className="text-indigo-300 text-xs font-bold">💰 ₹{(liveWorker.earnings || 0).toLocaleString()}</span>
-                <span className="text-indigo-400/50">|</span>
-                <span className="text-indigo-300 text-xs font-bold">📋 {liveWorker.jobsCompleted || 0} jobs</span>
-                <span className="text-indigo-400/50">|</span>
-                <span className="text-indigo-300 text-xs font-bold">⭐ {liveWorker.trustScore || 50}</span>
+              <div>
+                <h2 className="text-white font-black text-2xl tracking-wide" style={{ fontFamily: 'Outfit' }}>
+                  Ustaad AI
+                  <span className="ml-3 inline-flex items-center gap-1.5 text-xs font-bold text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2.5 py-1 rounded-full uppercase tracking-widest">
+                    <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                    Online
+                  </span>
+                </h2>
+                <p className="text-orange-300/60 text-sm font-medium mt-0.5">{t('ustaadMentor')} • Munshi AI Financial Agent</p>
               </div>
-              <span className="text-[9px] font-bold text-indigo-400 bg-indigo-500/20 px-2 py-0.5 rounded-full">{t('ustaadLive')}</span>
             </div>
             
-            {/* Messages */}
-            <div className="flex-1 overflow-y-auto p-4 space-y-4">
-              {ustaadMessages.map((m, i) => (
-                <div key={i} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'} gap-2`}>
-                  {m.role === 'ustaad' && <span className="text-2xl mt-1">👳🏾‍♂️</span>}
-                  <div className={`max-w-[80%] p-3.5 rounded-2xl text-sm font-medium leading-relaxed ${m.role === 'user' ? 'bg-orange-500 text-white rounded-br-sm' : 'bg-slate-800 text-white border border-slate-700 rounded-bl-sm'}`}>
-                    {m.text}
-                  </div>
-                </div>
-              ))}
-              {ustaadLoading && (
-                <div className="flex justify-start gap-2">
-                  <span className="text-2xl mt-1">👳🏾‍♂️</span>
-                  <div className="bg-slate-800 border border-slate-700 p-3 rounded-2xl rounded-bl-sm">
-                    <span className="flex gap-1">
-                      <span className="w-2 h-2 bg-orange-500 rounded-full animate-bounce"></span>
-                      <span className="w-2 h-2 bg-orange-500 rounded-full animate-bounce" style={{animationDelay:'75ms'}}></span>
-                      <span className="w-2 h-2 bg-orange-500 rounded-full animate-bounce" style={{animationDelay:'150ms'}}></span>
-                    </span>
-                  </div>
-                </div>
-              )}
-            </div>
-
-            {/* Input with Voice */}
-            <div className="p-3 bg-slate-800/50 border-t border-slate-800">
-              <div className="flex items-center gap-2">
-                {/* Mic Button — Bhashini Voice Input */}
-                <button 
-                  onMouseDown={startVoiceRecording}
-                  onMouseUp={stopVoiceRecording}
-                  onTouchStart={startVoiceRecording}
-                  onTouchEnd={stopVoiceRecording}
-                  className={`w-12 h-12 shrink-0 rounded-xl flex items-center justify-center transition-all ${
-                    isRecording 
-                      ? 'bg-red-500 text-white animate-pulse shadow-[0_0_20px_rgba(239,68,68,0.5)]' 
-                      : 'bg-slate-700 text-slate-400 hover:bg-slate-600 hover:text-white'
-                  }`}
-                  title="Hold to speak"
-                >
-                  🎙️
-                </button>
-                <input 
-                  type="text" 
-                  value={ustaadInput}
-                  onChange={e => setUstaadInput(e.target.value)}
-                  onKeyDown={e => e.key === 'Enter' && handleUstaadSend()}
-                  placeholder={isRecording ? '🔴 Bol raha hai...' : t('ustaadAsk')}
-                  disabled={isRecording}
-                  className="flex-1 bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-white text-sm focus:outline-none focus:border-orange-500 disabled:opacity-50"
-                />
-                <button 
-                  onClick={() => handleUstaadSend()}
-                  disabled={!ustaadInput.trim() || ustaadLoading}
-                  className="w-12 h-12 shrink-0 rounded-xl bg-orange-500 flex items-center justify-center text-white disabled:opacity-50 hover:bg-orange-400 transition-colors"
-                >
-                  ➤
-                </button>
+            <div className="flex items-center gap-3">
+              {/* Live Data Chips */}
+              <div className="hidden md:flex items-center gap-2 bg-slate-800/60 border border-slate-700/50 rounded-2xl px-4 py-2.5">
+                <span className="text-emerald-400 text-sm font-black">💰 ₹{(liveWorker.earnings || 0).toLocaleString()}</span>
+                <span className="text-slate-700">|</span>
+                <span className="text-blue-400 text-sm font-bold">📋 {liveWorker.jobsCompleted || 0}</span>
+                <span className="text-slate-700">|</span>
+                <span className="text-amber-400 text-sm font-bold">⭐ {liveWorker.trustScore || 50}</span>
+                <span className="text-[9px] font-bold text-orange-400 bg-orange-500/15 px-2 py-0.5 rounded-full ml-2 uppercase tracking-widest">{t('ustaadLive')}</span>
               </div>
-              <p className="text-center text-[9px] text-slate-600 mt-1.5 font-medium">🎙️ {t('bhashiniMic')}</p>
+              <button 
+                onClick={() => { setShowUstaad(false); window.speechSynthesis.cancel(); }} 
+                className="w-11 h-11 rounded-xl bg-slate-800 border border-slate-700 flex items-center justify-center text-slate-400 hover:bg-red-500/20 hover:text-red-400 hover:border-red-500/30 text-lg transition-all"
+              >
+                ✕
+              </button>
             </div>
+          </div>
+
+          {/* ── CHAT MESSAGES AREA ── */}
+          <div className="flex-1 overflow-y-auto px-4 md:px-16 lg:px-32 xl:px-48 py-8 space-y-6" style={{ scrollBehavior: 'smooth' }}>
+            {ustaadMessages.map((m, i) => (
+              <div key={i} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'} gap-4 animate-in slide-in-from-bottom-2 duration-300`}>
+                {m.role === 'ustaad' && (
+                  <div className="w-12 h-12 shrink-0 bg-gradient-to-br from-orange-500 to-amber-600 rounded-xl flex items-center justify-center text-2xl shadow-lg mt-1">
+                    👳🏾‍♂️
+                  </div>
+                )}
+                <div className={`max-w-[75%] px-6 py-4 rounded-3xl text-base font-medium leading-relaxed shadow-lg ${
+                  m.role === 'user' 
+                    ? 'bg-gradient-to-r from-orange-500 to-amber-500 text-white rounded-br-lg' 
+                    : 'bg-slate-800/80 text-slate-100 border border-slate-700/50 rounded-bl-lg backdrop-blur-sm'
+                }`}>
+                  {m.text}
+                </div>
+                {m.role === 'user' && (
+                  <div className="w-12 h-12 shrink-0 bg-slate-700 rounded-xl flex items-center justify-center text-xl mt-1">
+                    {w.photo ? <img src={w.photo} className="w-full h-full rounded-xl object-cover" /> : '👤'}
+                  </div>
+                )}
+              </div>
+            ))}
+            
+            {ustaadLoading && (
+              <div className="flex justify-start gap-4 animate-in slide-in-from-bottom-2 duration-300">
+                <div className="w-12 h-12 shrink-0 bg-gradient-to-br from-orange-500 to-amber-600 rounded-xl flex items-center justify-center text-2xl shadow-lg">
+                  👳🏾‍♂️
+                </div>
+                <div className="bg-slate-800/80 border border-slate-700/50 px-8 py-5 rounded-3xl rounded-bl-lg">
+                  <div className="flex gap-2">
+                    <span className="w-3 h-3 bg-orange-500 rounded-full animate-bounce"></span>
+                    <span className="w-3 h-3 bg-orange-400 rounded-full animate-bounce" style={{animationDelay:'100ms'}}></span>
+                    <span className="w-3 h-3 bg-amber-500 rounded-full animate-bounce" style={{animationDelay:'200ms'}}></span>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* ── INPUT BAR ── */}
+          <div className="shrink-0 bg-gradient-to-t from-[#0a0e1a] to-transparent px-4 md:px-16 lg:px-32 xl:px-48 py-6">
+            <div className="bg-slate-800/60 backdrop-blur-xl border border-slate-700/50 rounded-2xl p-3 flex items-center gap-3 shadow-[0_-10px_40px_rgba(0,0,0,0.3)]">
+              {/* Mic Button */}
+              <button 
+                onMouseDown={startVoiceRecording}
+                onMouseUp={stopVoiceRecording}
+                onTouchStart={startVoiceRecording}
+                onTouchEnd={stopVoiceRecording}
+                className={`w-14 h-14 shrink-0 rounded-xl flex items-center justify-center text-2xl transition-all ${
+                  isRecording 
+                    ? 'bg-red-500 text-white animate-pulse shadow-[0_0_30px_rgba(239,68,68,0.6)] scale-110' 
+                    : 'bg-slate-700/50 text-slate-400 hover:bg-orange-500/20 hover:text-orange-400 border border-slate-600/50'
+                }`}
+                title="Hold to speak"
+              >
+                🎙️
+              </button>
+              
+              <input 
+                type="text" 
+                value={ustaadInput}
+                onChange={e => setUstaadInput(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && handleUstaadSend()}
+                placeholder={isRecording ? '🔴 Bol raha hai...' : t('ustaadAsk')}
+                disabled={isRecording}
+                className="flex-1 bg-transparent text-white text-lg font-medium focus:outline-none placeholder:text-slate-500 disabled:opacity-50 px-2"
+                style={{ fontFamily: 'Outfit' }}
+              />
+              
+              <button 
+                onClick={() => handleUstaadSend()}
+                disabled={!ustaadInput.trim() || ustaadLoading}
+                className="w-14 h-14 shrink-0 rounded-xl bg-gradient-to-r from-orange-500 to-amber-500 flex items-center justify-center text-white text-xl font-bold disabled:opacity-30 hover:shadow-[0_0_20px_rgba(249,115,22,0.5)] transition-all active:scale-95"
+              >
+                ➤
+              </button>
+            </div>
+            <p className="text-center text-xs text-slate-600 mt-3 font-medium">
+              🎙️ {t('bhashiniMic')} • 🔊 Voice output in {language === 'hi' ? 'Hindi' : language === 'te' ? 'Telugu' : 'English'}
+            </p>
           </div>
         </div>
       )}

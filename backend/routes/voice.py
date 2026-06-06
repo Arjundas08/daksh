@@ -63,11 +63,11 @@ async def transcribe_audio(
 
 @router.post("/synthesize")
 async def synthesize_speech(req: SynthesizeRequest):
-    """Convert text to speech using edge-tts."""
+    """Convert text to speech using Bhashini TTS."""
     if not req.text.strip():
         raise HTTPException(status_code=400, detail="Text cannot be empty")
 
-    audio_bytes = await text_to_speech(req.text, req.language, req.gender)
+    audio_bytes = text_to_speech(req.text, req.language, req.gender)
 
     if audio_bytes is None:
         raise HTTPException(status_code=500, detail="TTS synthesis failed")

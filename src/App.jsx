@@ -404,7 +404,7 @@ export default function App() {
       {/* Floating Agent Command Center Button */}
       <button
         onClick={() => setShowCommandCenter(!showCommandCenter)}
-        className="fixed bottom-6 right-6 z-50 w-14 h-14 rounded-2xl bg-gradient-to-br from-emerald-500 to-cyan-500 flex items-center justify-center shadow-xl shadow-emerald-500/40 hover:shadow-emerald-500/60 hover:scale-110 transition-all active:scale-95 group"
+        className="fixed bottom-6 left-6 z-50 w-14 h-14 rounded-2xl bg-gradient-to-br from-emerald-500 to-cyan-500 flex items-center justify-center shadow-xl shadow-emerald-500/40 hover:shadow-emerald-500/60 hover:scale-110 transition-all active:scale-95 group"
         title="Agent Command Center"
       >
         <span className="text-2xl group-hover:animate-bounce">🤖</span>

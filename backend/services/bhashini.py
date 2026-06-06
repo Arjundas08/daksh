@@ -173,43 +173,50 @@ def speech_to_text(audio_bytes: bytes, language: str = "hi") -> Tuple[str, str]:
         return (f"ASR error: {str(e)}", language)
 
 
-async def text_to_speech(
-    text: str,
-    language: str = "hi",
-    gender: str = "female",
-) -> Optional[bytes]:
-    """
-    Convert text to speech using edge-tts (more reliable than Bhashini TTS).
-    Returns audio bytes (MP3).
-    """
-    import edge_tts
+def text_to_speech(text: str, language: str = "hi", gender: str = "female") -> Optional[bytes]:
+    """Convert text to speech using Bhashini TTS pipeline."""
+    if not is_bhashini_configured():
+        print("[Bhashini] Credentials not found.")
+        return None
 
-    # Voice map for Indian languages using edge-tts Neural voices
-    voice_map = {
-        "hi": {"female": "hi-IN-SwaraNeural", "male": "hi-IN-MadhurNeural"},
-        "te": {"female": "te-IN-ShrutiNeural", "male": "te-IN-MohanNeural"},
-        "ta": {"female": "ta-IN-PallaviNeural", "male": "ta-IN-ValluvarNeural"},
-        "kn": {"female": "kn-IN-SapnaNeural", "male": "kn-IN-GaganNeural"},
-        "en": {"female": "en-IN-NeerjaNeural", "male": "en-IN-PrabhatNeural"},
-        "bn": {"female": "bn-IN-TanishaaNeural", "male": "bn-IN-BashkarNeural"},
-        "mr": {"female": "mr-IN-AarohiNeural", "male": "mr-IN-ManoharNeural"},
-        "gu": {"female": "gu-IN-DhwaniNeural", "male": "gu-IN-NiranjanNeural"},
-        "ml": {"female": "ml-IN-SobhanaNeural", "male": "ml-IN-MidhunNeural"},
+    config = _get_pipeline_config("tts", language)
+    if not config:
+        print("[Bhashini] No TTS pipeline config found.")
+        return None
+
+    payload = {
+        "pipelineTasks": [
+            {
+                "taskType": "tts",
+                "config": {
+                    "language": {"sourceLanguage": language},
+                    "serviceId": config["serviceId"],
+                    "gender": gender.lower()
+                },
+            }
+        ],
+        "inputData": {
+            "input": [{"source": text}]
+        },
     }
 
-    gender_key = "female" if gender.lower() in ("female", "f") else "male"
-    voice = voice_map.get(language, voice_map["hi"]).get(gender_key, voice_map["hi"]["female"])
-
     try:
-        communicate = edge_tts.Communicate(text, voice)
-        audio_data = b""
-        async for chunk in communicate.stream():
-            if chunk["type"] == "audio":
-                audio_data += chunk["data"]
-        return audio_data if audio_data else None
+        resp = requests.post(
+            config.get("callbackUrl", INFERENCE_URL),
+            json=payload,
+            headers=_get_headers(for_inference=True),
+            timeout=30,
+        )
+        resp.raise_for_status()
+        
+        output = resp.json().get("pipelineResponse", [])[0].get("audio", [{}])[0].get("audioContent")
+        if output:
+            return base64.b64decode(output)
+            
     except Exception as e:
-        print(f"[Edge-TTS] Error: {e}")
-        return None
+        print(f"[Bhashini TTS] Error: {e}")
+        
+    return None
 
 
 def translate_text(
