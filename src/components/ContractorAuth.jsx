@@ -11,6 +11,7 @@ export default function ContractorAuth({ language, onAuthSuccess, onBack }) {
   const [name, setName] = useState('');
   const [companyName, setCompanyName] = useState('');
   const [email, setEmail] = useState('');
+  const [photo, setPhoto] = useState('');
   
   const [error, setError] = useState('');
 
@@ -64,8 +65,20 @@ export default function ContractorAuth({ language, onAuthSuccess, onBack }) {
         name,
         companyName,
         email,
+        photo,
       });
     }, 1000);
+  };
+
+  const handlePhotoUpload = (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setPhoto(reader.result);
+      };
+      reader.readAsDataURL(file);
+    }
   };
 
   return (
@@ -151,6 +164,13 @@ export default function ContractorAuth({ language, onAuthSuccess, onBack }) {
                         className="w-full bg-blue-950/20 border border-blue-500/20 rounded-2xl px-5 py-4 text-white text-base font-bold placeholder-white/20 focus:outline-none focus:border-blue-500 focus:bg-blue-900/20 transition-all shadow-inner"
                         placeholder={text.emailPh}
                       />
+                      <div className="relative flex items-center justify-between bg-blue-950/20 border border-blue-500/20 rounded-2xl px-5 py-4">
+                        <span className="text-white/60 font-bold text-sm">Company/Profile Photo</span>
+                        <input
+                          type="file" accept="image/*" onChange={handlePhotoUpload}
+                          className="text-white/80 text-sm file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-bold file:bg-blue-600/20 file:text-blue-400 hover:file:bg-blue-600/30"
+                        />
+                      </div>
                     </>
                   )}
 

@@ -139,14 +139,15 @@ def create_worker(
     experience: str = "",
     trust_score: int = 50,
     earnings: float = 0.0,
+    photo: str = "",
 ) -> Dict[str, Any]:
     """Create a new worker and return the created record."""
     worker_id = str(uuid4())
     conn = get_db()
     conn.execute(
-        """INSERT INTO workers (id, name, email, phone, password, skill, location, experience, trust_score, earnings)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-        (worker_id, name, email, phone, password, skill, location, experience, trust_score, earnings),
+        """INSERT INTO workers (id, name, email, phone, password, skill, location, experience, trust_score, earnings, photo)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+        (worker_id, name, email, phone, password, skill, location, experience, trust_score, earnings, photo),
     )
     conn.commit()
     row = conn.execute("SELECT * FROM workers WHERE id = ?", (worker_id,)).fetchone()
@@ -265,14 +266,15 @@ def create_contractor(
     password: str,
     email: str = "",
     company_name: str = "",
+    photo: str = "",
 ) -> Dict[str, Any]:
     """Create a new contractor."""
     contractor_id = str(uuid4())
     conn = get_db()
     conn.execute(
-        """INSERT INTO contractors (id, name, email, phone, password, company_name)
-           VALUES (?, ?, ?, ?, ?, ?)""",
-        (contractor_id, name, email, phone, password, company_name),
+        """INSERT INTO contractors (id, name, email, phone, password, company_name, photo)
+           VALUES (?, ?, ?, ?, ?, ?, ?)""",
+        (contractor_id, name, email, phone, password, company_name, photo),
     )
     conn.commit()
     row = conn.execute("SELECT * FROM contractors WHERE id = ?", (contractor_id,)).fetchone()

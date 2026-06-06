@@ -10,6 +10,7 @@ export default function WorkerAuth({ language, onAuthSuccess, onBack }) {
   const [password, setPassword] = useState('');
   const [username, setUsername] = useState('');
   const [email, setEmail] = useState('');
+  const [photo, setPhoto] = useState('');
   
   const [error, setError] = useState('');
 
@@ -75,8 +76,20 @@ export default function WorkerAuth({ language, onAuthSuccess, onBack }) {
         password,
         username,
         email,
+        photo,
       });
     }, 1000);
+  };
+
+  const handlePhotoUpload = (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setPhoto(reader.result);
+      };
+      reader.readAsDataURL(file);
+    }
   };
 
   const handleGoogleAuth = async () => {
@@ -201,6 +214,15 @@ export default function WorkerAuth({ language, onAuthSuccess, onBack }) {
                           onChange={(e) => setEmail(e.target.value)}
                           className="w-full bg-white/5 border border-white/10 rounded-2xl px-5 py-4 text-white text-base font-bold placeholder-white/20 focus:outline-none focus:border-orange-500 focus:bg-white/10 transition-all shadow-inner"
                           placeholder={text.emailPh}
+                        />
+                      </div>
+                      <div className="relative flex items-center justify-between bg-white/5 border border-white/10 rounded-2xl px-5 py-4">
+                        <span className="text-white/60 font-bold text-sm">Profile Photo (Optional)</span>
+                        <input
+                          type="file"
+                          accept="image/*"
+                          onChange={handlePhotoUpload}
+                          className="text-white/80 text-sm file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-bold file:bg-orange-500/20 file:text-orange-400 hover:file:bg-orange-500/30"
                         />
                       </div>
                     </>

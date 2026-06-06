@@ -16,11 +16,18 @@ export default function WorkerDashboard({ worker, language, onLogout }) {
   const [simSkill, setSimSkill] = useState('Current'); // 'Current' | 'Supervisor'
   const [simLoan, setSimLoan] = useState(false);
   
-  // Real weather & time state
   const [weather, setWeather] = useState(null);
   const [loadingWeather, setLoadingWeather] = useState(true);
   const [isDanger, setIsDanger] = useState(false);
   const [currentTime, setCurrentTime] = useState("");
+
+  // Ustaad AI Chatbot State
+  const [showUstaad, setShowUstaad] = useState(false);
+  const [ustaadMessages, setUstaadMessages] = useState([
+    { role: 'ustaad', text: 'Namaste Bhai! Main aapka Ustaad AI hoon. Kaam, paisa, ya skill seekhne ke baare mein kuch bhi poocho.' }
+  ]);
+  const [ustaadInput, setUstaadInput] = useState('');
+  const [ustaadLoading, setUstaadLoading] = useState(false);
 
   const w = worker || {
     id: 'DEMO-001',
@@ -134,10 +141,40 @@ export default function WorkerDashboard({ worker, language, onLogout }) {
     }
   };
 
-  const skillIcons = {
-    Mason: '🧱', Carpenter: '🪵', Helper: '🤝', Electrician: '⚡',
-    Plumber: '🔧', Painter: '🎨', Supervisor: '📋', Welder: '🔥',
-    Fitter: '⚙️', Default: '👷',
+  };
+  
+  const handleUstaadSend = async () => {
+    if (!ustaadInput.trim()) return;
+    const userMsg = ustaadInput.trim();
+    setUstaadMessages(prev => [...prev, { role: 'user', text: userMsg }]);
+    setUstaadInput('');
+    setUstaadLoading(true);
+
+    try {
+      const res = await fetch(`${API_BASE}/api/chat/ustaad`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message: userMsg, role: 'worker', skill: w.skill })
+      });
+      const data = await res.json();
+      if (data.success) {
+        setUstaadMessages(prev => [...prev, { role: 'ustaad', text: data.reply }]);
+        
+        // Speak out loud!
+        if ("speechSynthesis" in window) {
+          const utterance = new SpeechSynthesisUtterance(data.reply);
+          // Try to find a Hindi voice, else default
+          const voices = window.speechSynthesis.getVoices();
+          const hiVoice = voices.find(v => v.lang.includes('hi') || v.lang.includes('IN'));
+          if (hiVoice) utterance.voice = hiVoice;
+          window.speechSynthesis.speak(utterance);
+        }
+      }
+    } catch(e) {
+      console.error(e);
+    } finally {
+      setUstaadLoading(false);
+    }
   };
   const skillIcon = skillIcons[w.skill] || skillIcons.Default;
 
@@ -569,8 +606,48 @@ export default function WorkerDashboard({ worker, language, onLogout }) {
       { name: 'Year 5', value: monthlyIncome * 12 * 6 },
     ];
 
+    const targetIncome = 25000;
+    const currentEarnings = liveWorker.earnings || 0;
+    const remaining = Math.max(0, targetIncome - currentEarnings);
+    const jobsNeeded = Math.ceil(remaining / baseWage);
+
     return (
       <div className="space-y-8 animate-in slide-in-from-bottom-4 duration-500 w-full">
+        {/* ── MUNSHI AI (FINANCIAL AGENT) ── */}
+        <div className="bg-gradient-to-br from-indigo-900 to-purple-900 border border-indigo-500/30 rounded-3xl p-8 shadow-[0_0_50px_rgba(79,70,229,0.2)]">
+          <div className="flex items-start gap-4">
+            <div className="w-14 h-14 bg-white/10 rounded-2xl flex items-center justify-center text-3xl shrink-0">📊</div>
+            <div className="flex-1">
+              <div className="flex items-center justify-between mb-2">
+                <h3 className="text-xl font-black text-white" style={{ fontFamily: 'Outfit' }}>Munshi AI <span className="text-indigo-300 text-sm ml-2 font-semibold">Your Financial Agent</span></h3>
+                <span className="text-xs font-bold text-white bg-indigo-500/50 px-3 py-1 rounded-full uppercase tracking-widest">Monthly Target: ₹{targetIncome.toLocaleString()}</span>
+              </div>
+              <p className="text-indigo-100/80 leading-relaxed mb-6 font-medium">
+                Bhai, you have earned <strong className="text-emerald-400 font-black">₹{currentEarnings.toLocaleString()}</strong> this month. 
+                {remaining > 0 
+                  ? ` You need ₹${remaining.toLocaleString()} more. Just take ${jobsNeeded} more days of ${w.skill} work at ₹${baseWage}/day and your target is hit! Keep going!` 
+                  : ` Amazing! You have hit your monthly target. Any extra work now is pure bonus!`}
+              </p>
+              
+              {/* Progress Bar */}
+              <div className="space-y-2">
+                <div className="flex justify-between text-xs font-bold text-indigo-200">
+                  <span>Current: ₹{currentEarnings.toLocaleString()}</span>
+                  <span>Goal: ₹{targetIncome.toLocaleString()}</span>
+                </div>
+                <div className="w-full h-3 bg-indigo-950 rounded-full overflow-hidden border border-indigo-500/20">
+                  <div 
+                    className="h-full bg-gradient-to-r from-emerald-400 to-emerald-500 transition-all duration-1000 relative"
+                    style={{ width: `${Math.min(100, (currentEarnings / targetIncome) * 100)}%` }}
+                  >
+                    <div className="absolute inset-0 bg-white/20 animate-pulse"></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
         <div className="flex items-center justify-between">
           <div>
             <h2 className="text-3xl font-black text-white" style={{ fontFamily: 'Outfit' }}>See Your Future</h2>
@@ -745,6 +822,86 @@ export default function WorkerDashboard({ worker, language, onLogout }) {
           </button>
         ))}
       </nav>
+
+      {/* ── USTAAD AI FLOATING BUTTON ── */}
+      <button 
+        onClick={() => setShowUstaad(true)}
+        className="fixed bottom-24 md:bottom-8 right-6 z-50 w-16 h-16 rounded-full bg-gradient-to-r from-orange-500 to-yellow-500 flex items-center justify-center shadow-[0_0_40px_rgba(249,115,22,0.5)] hover:scale-110 active:scale-95 transition-all"
+      >
+        <span className="text-3xl">👳🏾‍♂️</span>
+        <span className="absolute -top-1 -right-1 flex h-4 w-4">
+          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
+          <span className="relative inline-flex rounded-full h-4 w-4 bg-green-500 border-2 border-slate-900"></span>
+        </span>
+      </button>
+
+      {/* ── USTAAD AI CHAT MODAL ── */}
+      {showUstaad && (
+        <div className="fixed inset-0 z-[200] flex items-end md:items-center justify-center md:p-6 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="w-full md:w-[400px] h-[80vh] md:h-[600px] bg-slate-900 md:rounded-3xl border border-slate-800 flex flex-col shadow-2xl overflow-hidden animate-in slide-in-from-bottom-8">
+            {/* Header */}
+            <div className="bg-gradient-to-r from-orange-500 to-orange-600 p-4 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+              <div className="w-14 h-14 bg-gradient-to-br from-orange-400 to-orange-500 rounded-2xl flex items-center justify-center text-white font-black text-2xl shadow-lg shadow-orange-500/30 overflow-hidden">
+                {liveWorker.photo ? (
+                  <img src={liveWorker.photo} alt="Profile" className="w-full h-full object-cover" />
+                ) : (
+                  liveWorker.name.charAt(0).toUpperCase()
+                )}
+              </div>
+                <div>
+                  <h3 className="text-white font-black text-lg leading-tight">Ustaad AI</h3>
+                  <p className="text-orange-100/70 text-[10px] uppercase font-bold tracking-widest">Your Mentor</p>
+                </div>
+              </div>
+              <button onClick={() => { setShowUstaad(false); window.speechSynthesis.cancel(); }} className="w-8 h-8 rounded-full bg-white/10 flex items-center justify-center text-white hover:bg-white/20">✕</button>
+            </div>
+            
+            {/* Messages */}
+            <div className="flex-1 overflow-y-auto p-4 space-y-4">
+              {ustaadMessages.map((m, i) => (
+                <div key={i} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                  <div className={`max-w-[85%] p-3 rounded-2xl text-sm font-medium ${m.role === 'user' ? 'bg-orange-500 text-white rounded-br-sm' : 'bg-slate-800 text-white border border-slate-700 rounded-bl-sm'}`}>
+                    {m.text}
+                  </div>
+                </div>
+              ))}
+              {ustaadLoading && (
+                <div className="flex justify-start">
+                  <div className="bg-slate-800 border border-slate-700 p-3 rounded-2xl rounded-bl-sm">
+                    <span className="flex gap-1">
+                      <span className="w-2 h-2 bg-orange-500 rounded-full animate-bounce"></span>
+                      <span className="w-2 h-2 bg-orange-500 rounded-full animate-bounce delay-75"></span>
+                      <span className="w-2 h-2 bg-orange-500 rounded-full animate-bounce delay-150"></span>
+                    </span>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Input */}
+            <div className="p-3 bg-slate-800/50 border-t border-slate-800">
+              <div className="flex items-center gap-2">
+                <input 
+                  type="text" 
+                  value={ustaadInput}
+                  onChange={e => setUstaadInput(e.target.value)}
+                  onKeyDown={e => e.key === 'Enter' && handleUstaadSend()}
+                  placeholder="Poocho bhai..."
+                  className="flex-1 bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-white text-sm focus:outline-none focus:border-orange-500"
+                />
+                <button 
+                  onClick={handleUstaadSend}
+                  disabled={!ustaadInput.trim() || ustaadLoading}
+                  className="w-12 h-12 rounded-xl bg-orange-500 flex items-center justify-center text-white disabled:opacity-50"
+                >
+                  ➤
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

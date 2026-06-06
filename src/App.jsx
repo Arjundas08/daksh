@@ -378,7 +378,7 @@ export default function App() {
               }} />
             )}
             {workerAuthStep === 'dashboard' && (
-              <WorkerDashboard worker={loggedInWorker} language={language} onLogout={goHome} />
+              <WorkerDashboard worker={loggedInWorker} language={language} setLanguage={setLanguage} onLogout={goHome} />
             )}
           </>
         )}
@@ -393,6 +393,7 @@ export default function App() {
               <ContractorDashboard 
                 contractor={loggedInContractor} 
                 language={language} 
+                setLanguage={setLanguage}
                 onLogout={goHome} 
               />
             )}

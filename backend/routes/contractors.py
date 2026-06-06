@@ -13,6 +13,7 @@ class ContractorRegisterRequest(BaseModel):
     password: str
     email: str = ""
     company_name: str = ""
+    photo: str = ""
 
 class LoginRequest(BaseModel):
     phone: str
@@ -40,5 +41,6 @@ async def register_contractor(req: ContractorRegisterRequest):
         password=req.password,
         email=req.email,
         company_name=req.company_name,
+        photo=req.photo,
     )
     return {"success": True, "contractor": contractor}

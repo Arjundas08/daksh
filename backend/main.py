@@ -26,6 +26,7 @@ from routes.contracts import router as contracts_router
 from routes.safety import router as safety_router
 from routes.voice import router as voice_router
 from routes.contractors import router as contractors_router
+from routes.chat import router as chat_router
 
 # ─── Create App ──────────────────────────────────────────────────────────────
 
@@ -77,6 +78,7 @@ app.include_router(contracts_router)
 app.include_router(contractors_router)
 app.include_router(safety_router)
 app.include_router(voice_router)
+app.include_router(chat_router)
 
 
 # ─── Root & Health Endpoints ─────────────────────────────────────────────────

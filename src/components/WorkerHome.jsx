@@ -30,8 +30,19 @@ export default function WorkerHome({ language, authData, onBack, onComplete }) {
     phone: authData?.phone || '', 
     email: authData?.email || '',
     password: authData?.password || '',
-    skill: '', experience: '', location: '', dailyWage: '',
+    skill: '', experience: '', location: '', dailyWage: '', photo: authData?.photo || '',
   });
+
+  const handlePhotoUpload = (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setForm({ ...form, photo: reader.result });
+      };
+      reader.readAsDataURL(file);
+    }
+  };
 
   const t = {
     hi: {
@@ -159,13 +170,14 @@ export default function WorkerHome({ language, authData, onBack, onComplete }) {
 
     try {
       const payload = {
-        name: form.name.trim(),
+        name: form.name,
+        phone: form.phone,
+        email: form.email,
+        password: form.password,
         skill: form.skill,
-        location: form.location.trim(),
-        phone: form.phone.trim(),
-        email: form.email.trim(),
-        password: form.password.trim(),
-        experience: form.experience.trim(),
+        experience: form.experience,
+        location: form.location,
+        photo: form.photo,
       };
 
       const res = await fetch(`${API_BASE}/api/workers/register`, {
@@ -367,10 +379,23 @@ export default function WorkerHome({ language, authData, onBack, onComplete }) {
               <label className="text-xs text-white/40 font-semibold uppercase tracking-wider">{text.fPhone} (Verified)</label>
               <input
                 type="tel"
+                maxLength={10}
                 value={form.phone}
-                readOnly
-                className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3.5 text-white/50 text-sm font-medium focus:outline-none cursor-not-allowed"
+                onChange={e => setForm({ ...form, phone: e.target.value.replace(/\D/g, '') })}
+                placeholder={text.fPhonePh}
+                className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3.5 text-white placeholder-white/20 text-sm font-medium focus:outline-none focus:border-orange-400/50 focus:bg-white/8 transition-all"
               />
+            </div>
+
+            {/* Profile Photo */}
+            <div className="space-y-1.5">
+              <label className="text-xs text-white/40 font-semibold uppercase tracking-wider">Profile Photo (Optional)</label>
+              <div className="relative flex items-center justify-between bg-white/5 border border-white/10 rounded-xl px-4 py-2">
+                <input
+                  type="file" accept="image/*" onChange={handlePhotoUpload}
+                  className="text-white/80 text-sm file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-bold file:bg-orange-500/20 file:text-orange-400 hover:file:bg-orange-500/30"
+                />
+              </div>
             </div>
 
             {/* Skill Selection */}

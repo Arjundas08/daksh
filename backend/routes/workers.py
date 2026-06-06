@@ -32,6 +32,7 @@ class WorkerRegisterRequest(BaseModel):
     location: str = ""
     phone: str = ""
     experience: str = ""
+    photo: str = ""
 
 class LoginRequest(BaseModel):
     phone: str
@@ -79,6 +80,7 @@ async def register_worker(req: WorkerRegisterRequest):
         location=req.location,
         phone=req.phone,
         experience=req.experience,
+        photo=req.photo,
     )
     return {"success": True, "worker": worker}
 
@@ -112,6 +114,7 @@ async def voice_register(
     phone: str = Form(None),
     email: str = Form(None),
     password: str = Form(None),
+    photo: str = Form(None),
 ):
     """
     Register a worker via voice input.
@@ -168,6 +171,7 @@ If any field is not mentioned, make a reasonable guess or leave empty."""
         location=extracted.get("location", ""),
         phone=final_phone,
         experience=extracted.get("experience", "0"),
+        photo=photo or "",
     )
 
     return {

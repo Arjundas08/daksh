@@ -153,10 +153,17 @@ export default function ContractorDashboard({ contractor, language, onLogout }) 
           </div>
           <p className="text-xs font-bold text-blue-400 uppercase tracking-widest ml-[52px] -mt-1">Contractor</p>
 
-          <div className="mt-6 bg-slate-800 rounded-2xl p-4 border border-slate-700">
-            <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Company</div>
-            <div className="text-white font-bold text-sm truncate">{displayName}</div>
-            <div className="text-slate-400 text-xs mt-1">📞 {c.phone}</div>
+          <div className="mt-6 bg-slate-800 rounded-2xl p-4 border border-slate-700 flex items-center gap-3">
+            {c.photo && (
+              <div className="w-10 h-10 shrink-0 rounded-xl overflow-hidden bg-slate-700">
+                <img src={c.photo} alt="Profile" className="w-full h-full object-cover" />
+              </div>
+            )}
+            <div className="min-w-0">
+              <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5">Company</div>
+              <div className="text-white font-bold text-sm truncate">{displayName}</div>
+              <div className="text-slate-400 text-xs mt-0.5">📞 {c.phone}</div>
+            </div>
           </div>
 
           <nav className="space-y-2 mt-6">
@@ -397,8 +404,12 @@ export default function ContractorDashboard({ contractor, language, onLogout }) 
                               {applicants.map(worker => (
                                 <div key={worker.worker_id} className="flex items-center justify-between bg-slate-800 border border-slate-700 rounded-2xl p-5">
                                   <div className="flex items-center gap-4">
-                                    <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-orange-400 to-orange-600 flex items-center justify-center text-white font-black text-lg shadow-lg">
-                                      {worker.name.charAt(0)}
+                                    <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-orange-400 to-orange-600 flex items-center justify-center text-white font-black text-lg shadow-lg overflow-hidden">
+                                      {worker.photo ? (
+                                        <img src={worker.photo} alt={worker.name} className="w-full h-full object-cover" />
+                                      ) : (
+                                        worker.name.charAt(0).toUpperCase()
+                                      )}
                                     </div>
                                     <div>
                                       <div className="text-white font-bold text-lg">{worker.name}</div>
