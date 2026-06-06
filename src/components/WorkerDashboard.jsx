@@ -141,6 +141,10 @@ export default function WorkerDashboard({ worker, language, onLogout }) {
     }
   };
 
+  const skillIcons = {
+    Mason: '🧱', Carpenter: '🪵', Helper: '🤝', Electrician: '⚡',
+    Plumber: '🔧', Painter: '🎨', Supervisor: '📋', Welder: '🔥',
+    Fitter: '⚙️', Default: '👷',
   };
   
   const handleUstaadSend = async () => {
