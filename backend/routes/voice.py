@@ -50,6 +50,9 @@ async def transcribe_audio(
 
     text, detected_lang = speech_to_text(audio_bytes, language)
 
+    if not text or text.startswith("ASR error:"):
+        raise HTTPException(status_code=502, detail=text or "Bhashini API is temporarily down.")
+
     return {
         "success": True,
         "text": text,

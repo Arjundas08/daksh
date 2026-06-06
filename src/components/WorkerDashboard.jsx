@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
+import { translations } from '../utils/translations';
 
 const API_BASE = 'http://localhost:8000';
 
@@ -30,6 +31,10 @@ export default function WorkerDashboard({ worker, language, setLanguage, onLogou
   const [ustaadLoading, setUstaadLoading] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
   const [mediaRecorder, setMediaRecorder] = useState(null);
+
+  const t = (key) => {
+    return translations[language || 'en']?.[key] || translations['en'][key] || key;
+  };
 
   const w = worker || {
     id: 'DEMO-001',
@@ -207,48 +212,45 @@ export default function WorkerDashboard({ worker, language, setLanguage, onLogou
     }
   };
 
-  // Voice recording for Ustaad AI (Bhashini ASR)
-  const startVoiceRecording = async () => {
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const recorder = new MediaRecorder(stream, { mimeType: 'audio/webm' });
-      const chunks = [];
-      recorder.ondataavailable = (e) => chunks.push(e.data);
-      recorder.onstop = async () => {
-        stream.getTracks().forEach(t => t.stop());
-        const blob = new Blob(chunks, { type: 'audio/webm' });
-        const formData = new FormData();
-        formData.append('audio', blob, 'voice.webm');
-        formData.append('language', language === 'te' ? 'te' : 'hi');
-        
-        setUstaadLoading(true);
-        try {
-          const res = await fetch(`${API_BASE}/api/voice/transcribe`, {
-            method: 'POST',
-            body: formData,
-          });
-          const data = await res.json();
-          if (data.success && data.text) {
-            handleUstaadSend(data.text);
-          }
-        } catch(err) {
-          console.error('Voice transcription failed:', err);
-          setUstaadLoading(false);
-        }
-      };
-      recorder.start();
-      setMediaRecorder(recorder);
-      setIsRecording(true);
-    } catch(err) {
-      console.error('Microphone access denied:', err);
+  // Voice recording for Ustaad AI (Native Browser Speech)
+  const startVoiceRecording = () => {
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+      alert("Browser does not support voice input. Please type.");
+      return;
     }
+
+    const recognition = new SpeechRecognition();
+    recognition.lang = language === 'te' ? 'te-IN' : (language === 'hi' ? 'hi-IN' : 'en-IN');
+    recognition.interimResults = false;
+    recognition.maxAlternatives = 1;
+
+    recognition.onstart = () => {
+      setIsRecording(true);
+    };
+
+    recognition.onresult = (event) => {
+      const text = event.results[0][0].transcript;
+      handleUstaadSend(text);
+    };
+
+    recognition.onerror = (event) => {
+      console.error('Speech recognition error:', event.error);
+      setIsRecording(false);
+    };
+
+    recognition.onend = () => {
+      setIsRecording(false);
+    };
+
+    recognition.start();
+    setMediaRecorder(recognition);
   };
 
   const stopVoiceRecording = () => {
-    if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+    if (mediaRecorder && typeof mediaRecorder.stop === 'function') {
       mediaRecorder.stop();
     }
-    setIsRecording(false);
   };
 
   const skillIcon = skillIcons[w.skill] || skillIcons.Default;
@@ -257,11 +259,11 @@ export default function WorkerDashboard({ worker, language, setLanguage, onLogou
 
   // Tabs for Sidebar
   const tabs = [
-    { id: 'home', label: 'Overview', icon: '🏠' },
-    { id: 'feed', label: 'Find Work', icon: '🔍', badge: jobs.length },
-    { id: 'active', label: 'Active Contracts', icon: '📋', badge: activeJobs.length },
-    { id: 'wallet', label: 'Escrow Wallet', icon: '💰' },
-    { id: 'growth', label: 'Income Simulator', icon: '📈' },
+    { id: 'home', label: t('overview'), icon: '🏠' },
+    { id: 'feed', label: t('findWork'), icon: '🔍', badge: jobs.length },
+    { id: 'active', label: t('activeContracts'), icon: '📋', badge: activeJobs.length },
+    { id: 'wallet', label: t('escrowWallet'), icon: '💰' },
+    { id: 'growth', label: t('incomeSimulator'), icon: '📈' },
   ];
 
   /* ─────────────────── SAFETY WARNING MODAL ─────────────────── */
@@ -345,13 +347,13 @@ export default function WorkerDashboard({ worker, language, setLanguage, onLogou
                     onClick={() => setShowSafetyWarning(false)}
                     className="bg-slate-800 hover:bg-slate-700 text-white font-bold py-4 rounded-xl transition-all"
                   >
-                    Aaj Nahi (Skip)
+                    {t('safetySkip')}
                   </button>
                   <button 
                     onClick={() => setShowSafetyWarning(false)}
                     className="bg-rose-500 hover:bg-rose-600 text-white font-bold py-4 rounded-xl transition-all shadow-lg shadow-rose-500/30"
                   >
-                    Main Taiyar Hu
+                    {t('safetyReady')}
                   </button>
                 </>
               ) : (
@@ -374,13 +376,13 @@ export default function WorkerDashboard({ worker, language, setLanguage, onLogou
     <div className="space-y-8 animate-in slide-in-from-bottom-4 duration-500">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-4xl font-black text-white" style={{ fontFamily: 'Outfit' }}>Welcome, {w.name.split(' ')[0]} 👋</h1>
+          <h1 className="text-4xl font-black text-white" style={{ fontFamily: 'Outfit' }}>{t('welcome')}, {w.name.split(' ')[0]} 👋</h1>
           <p className="text-slate-400 mt-1">Here is your digital shram profile.</p>
         </div>
         <div className="bg-slate-800/50 border border-slate-700/50 px-4 py-2 rounded-xl flex items-center gap-3">
           <span className="text-2xl">{skillIcon}</span>
           <div>
-            <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest block">Primary Skill</span>
+            <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest block">{t('primarySkill')}</span>
             <span className="text-white font-bold">{w.skill}</span>
           </div>
         </div>
@@ -390,7 +392,7 @@ export default function WorkerDashboard({ worker, language, setLanguage, onLogou
         <div className="col-span-1 md:col-span-2 rounded-3xl bg-gradient-to-br from-slate-800 to-slate-900 border border-slate-700 p-8 relative overflow-hidden">
           <div className="absolute top-0 right-0 p-6 opacity-10 text-8xl">🛡️</div>
           <div className="relative z-10">
-            <div className="text-sm font-bold text-slate-400 uppercase tracking-widest mb-6">Trust Score</div>
+            <div className="text-sm font-bold text-slate-400 uppercase tracking-widest mb-6">{t('trustScore')}</div>
             <div className="flex items-baseline gap-4">
               <span className={`text-8xl font-black ${score >= 80 ? 'text-emerald-400' : 'text-amber-400'}`} style={{ fontFamily: 'Outfit' }}>{score}</span>
               <span className="text-xl font-bold text-slate-600">/ 100</span>
@@ -416,18 +418,18 @@ export default function WorkerDashboard({ worker, language, setLanguage, onLogou
             <QRCodeSVG value={`https://daksh.app/verify/${w.id}`} size={80} level="H" />
           </div>
           <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-blue-500/10 border border-blue-500/20 text-blue-400 text-[10px] font-bold uppercase tracking-widest">
-            <span>✓</span> Verified Identity
+            <span>✓</span> {t('verifiedIdentity')}
           </div>
         </div>
       </div>
 
       <div className="grid grid-cols-2 gap-6">
         <div className="rounded-3xl bg-slate-800 border border-slate-700 p-8">
-          <div className="text-slate-400 text-xs font-bold uppercase tracking-widest mb-4">Jobs Completed</div>
+          <div className="text-slate-400 text-xs font-bold uppercase tracking-widest mb-4">{t('jobsCompleted')}</div>
           <div className="text-5xl font-black text-white" style={{ fontFamily: 'Outfit' }}>{liveWorker.jobsCompleted || 0}</div>
         </div>
         <div className="rounded-3xl bg-slate-800 border border-slate-700 p-8">
-          <div className="text-emerald-500/70 text-xs font-bold uppercase tracking-widest mb-4">Total Earnings</div>
+          <div className="text-emerald-500/70 text-xs font-bold uppercase tracking-widest mb-4">{t('totalEarnings')}</div>
           <div className="text-5xl font-black text-emerald-400" style={{ fontFamily: 'Outfit' }}>₹{(liveWorker.earnings || 0).toLocaleString()}</div>
         </div>
       </div>
@@ -438,7 +440,7 @@ export default function WorkerDashboard({ worker, language, setLanguage, onLogou
   const renderFeed = () => (
     <div className="space-y-6 animate-in slide-in-from-bottom-4 duration-500 w-full">
       <div className="flex items-center justify-between mb-8">
-        <h2 className="text-3xl font-black text-white" style={{ fontFamily: 'Outfit' }}>AI Recommended Jobs</h2>
+        <h2 className="text-3xl font-black text-white" style={{ fontFamily: 'Outfit' }}>{t('aiRecommendedJobs')}</h2>
         {jobs.length > 0 && <span className="text-xs font-bold text-orange-400 bg-orange-500/10 border border-orange-500/20 px-3 py-1 rounded-full uppercase tracking-widest">{jobs.length} Matches</span>}
       </div>
 
@@ -450,7 +452,7 @@ export default function WorkerDashboard({ worker, language, setLanguage, onLogou
       ) : jobs.length === 0 ? (
         <div className="p-16 text-center bg-slate-800/50 rounded-3xl border border-slate-700 border-dashed">
           <div className="text-4xl mb-4">🔍</div>
-          <p className="text-slate-400 font-bold">No jobs matching your profile right now.</p>
+          <p className="text-slate-400 font-bold">{t('noJobs')}</p>
         </div>
       ) : (
         jobs.map(job => {
@@ -473,16 +475,16 @@ export default function WorkerDashboard({ worker, language, setLanguage, onLogou
 
               <div className="flex items-center gap-8 mb-8 bg-slate-900/50 p-4 rounded-2xl">
                 <div>
-                  <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Wage</div>
+                  <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">{t('wage')}</div>
                   <div className="text-xl font-black text-emerald-400">₹{job.wage_per_day}<span className="text-xs text-slate-600 ml-1">/day</span></div>
                 </div>
                 <div>
-                  <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Duration</div>
+                  <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">{t('duration')}</div>
                   <div className="text-xl font-black text-white">{job.duration_days} <span className="text-xs text-slate-600">days</span></div>
                 </div>
                 <div>
-                  <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Need</div>
-                  <div className="text-xl font-black text-blue-400">{job.workers_needed} <span className="text-xs text-slate-600">workers</span></div>
+                  <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">{t('need')}</div>
+                  <div className="text-xl font-black text-blue-400">{job.workers_needed} <span className="text-xs text-slate-600">{t('workers')}</span></div>
                 </div>
               </div>
 
@@ -491,7 +493,7 @@ export default function WorkerDashboard({ worker, language, setLanguage, onLogou
                 disabled={processingId === job.id}
                 className="w-full bg-white hover:bg-orange-500 text-slate-900 hover:text-white font-black py-4 rounded-xl transition-all active:scale-[0.98]"
               >
-                {processingId === job.id ? 'ACCEPTING...' : 'ACCEPT JOB INSTANTLY'}
+                {processingId === job.id ? t('accepting') : t('acceptJob')}
               </button>
             </div>
           )
@@ -506,320 +508,139 @@ export default function WorkerDashboard({ worker, language, setLanguage, onLogou
 
   const renderActive = () => (
     <div className="space-y-6 animate-in slide-in-from-bottom-4 duration-500 w-full">
-      <h2 className="text-3xl font-black text-white mb-8" style={{ fontFamily: 'Outfit' }}>Active Contracts</h2>
-      {workingJobs.length === 0 ? (
-        <div className="p-16 text-center bg-slate-800/50 rounded-3xl border border-slate-700 border-dashed">
-          <div className="text-4xl mb-4">📋</div>
-          <p className="text-slate-400 font-bold text-lg">No active work right now</p>
-          <p className="text-slate-600 mt-2">Accept a job from the Find Work tab to start earning</p>
-        </div>
-      ) : (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {workingJobs.map(job => {
-            const totalEarning = job.wage_per_day * job.duration_days;
-            return (
-              <div key={job.id} className="bg-slate-800 border border-emerald-500/20 rounded-3xl p-8 relative overflow-hidden hover:border-emerald-500/40 transition-colors">
-                <div className="absolute top-0 left-0 w-1.5 h-full bg-emerald-500"></div>
-                <div className="flex justify-between items-start mb-5">
-                  <span className="text-[10px] font-black uppercase tracking-widest px-3 py-1.5 rounded-lg bg-emerald-500/20 text-emerald-400">
-                    ● ACTIVE
-                  </span>
-                  <span className="text-sm font-bold text-slate-500">{job.contractor_name}</span>
-                </div>
-                
-                <h3 className="text-2xl font-black text-white mb-2">{job.title}</h3>
-                <p className="text-slate-400 text-sm mb-5 flex items-center gap-2"><span>📍</span>{job.location}</p>
+      <h2 className="text-3xl font-black text-white mb-8" style={{ fontFamily: 'Outfit' }}>{t('activeContracts')}</h2>
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {workingJobs.map(job => {
+          const totalEarning = job.wage_per_day * job.duration_days;
+          return (
+            <div key={job.id} className="bg-slate-800 border border-emerald-500/20 rounded-3xl p-8 relative overflow-hidden hover:border-emerald-500/40 transition-colors">
+              <div className="absolute top-0 left-0 w-1.5 h-full bg-emerald-500"></div>
+              <div className="flex justify-between items-start mb-5">
+                <span className="text-[10px] font-black uppercase tracking-widest px-3 py-1.5 rounded-lg bg-emerald-500/20 text-emerald-400">
+                  ● ACTIVE
+                </span>
+                <span className="text-sm font-bold text-slate-500">{job.contractor_name}</span>
+              </div>
+              
+              <h3 className="text-2xl font-black text-white mb-2">{job.title}</h3>
+              <p className="text-slate-400 text-sm mb-5 flex items-center gap-2"><span>📍</span>{job.location}</p>
 
-                <div className="grid grid-cols-3 gap-3 mb-5 bg-slate-900/50 p-4 rounded-2xl">
-                  <div>
-                    <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Wage</div>
-                    <div className="text-lg font-black text-emerald-400">₹{job.wage_per_day}<span className="text-xs text-slate-600">/day</span></div>
-                  </div>
-                  <div>
-                    <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Duration</div>
-                    <div className="text-lg font-black text-white">{job.duration_days} days</div>
-                  </div>
-                  <div>
-                    <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Total</div>
-                    <div className="text-lg font-black text-amber-400">₹{totalEarning.toLocaleString()}</div>
-                  </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="bg-slate-900/50 p-4 rounded-2xl">
+                  <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">{t('wage')}</div>
+                  <div className="text-xl font-black text-white">₹{job.wage_per_day}<span className="text-xs text-slate-600 ml-1">/day</span></div>
                 </div>
-
-                <div className="bg-blue-500/5 border border-blue-500/20 rounded-2xl p-4 mb-5">
-                  <div className="text-[10px] font-bold text-blue-400 uppercase tracking-widest mb-2">📅 Shift Schedule</div>
-                  <div className="text-white font-bold">08:00 AM — 05:00 PM</div>
-                  <div className="text-slate-400 text-xs mt-1">Mon-Sat • 1hr Lunch Break (12:00 PM)</div>
-                </div>
-
-                <div className="flex gap-3">
-                  <button className="flex-1 bg-emerald-500 hover:bg-emerald-400 text-slate-900 font-black py-3 rounded-xl flex justify-center items-center gap-2 text-sm transition-all">
-                    <span>📞</span> Call Contractor
-                  </button>
-                  <button className="flex-1 bg-slate-700 hover:bg-slate-600 text-white font-black py-3 rounded-xl flex justify-center items-center gap-2 text-sm transition-all">
-                    <span>🗺️</span> Navigate
-                  </button>
+                <div className="bg-slate-900/50 p-4 rounded-2xl">
+                  <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">{t('safeInEscrow')}</div>
+                  <div className="text-xl font-black text-emerald-400">₹{totalEarning.toLocaleString()}</div>
                 </div>
               </div>
-            );
-          })}
-        </div>
-      )}
-
-      {/* Completed Jobs History */}
-      {completedJobs.length > 0 && (
-        <>
-          <h3 className="text-xl font-black text-slate-500 mt-10 mb-4" style={{ fontFamily: 'Outfit' }}>Completed Work</h3>
-          <div className="space-y-3">
-            {completedJobs.map(job => (
-              <div key={job.id} className="bg-slate-800/50 border border-slate-700/50 rounded-2xl p-5 flex justify-between items-center">
-                <div>
-                  <div className="text-white font-bold">{job.title}</div>
-                  <div className="text-slate-500 text-sm">{job.contractor_name} • {job.location}</div>
-                </div>
-                <div className="text-right">
-                  <div className="text-emerald-400 font-black">+₹{(job.wage_per_day * job.duration_days).toLocaleString()}</div>
-                  <span className="text-[10px] font-bold text-slate-600 uppercase tracking-widest">✅ Paid</span>
-                </div>
-              </div>
-            ))}
-          </div>
-        </>
-      )}
+            </div>
+          )
+        })}
+      </div>
     </div>
   );
 
-  /* ─────────────────── WALLET TAB (ESCROW) ─────────────────── */
-  const lockedEscrow = workingJobs.reduce((sum, j) => sum + (j.wage_per_day * j.duration_days), 0);
-  const realBalance = liveWorker.earnings || 0;
+  /* ─────────────────── WALLET TAB ─────────────────── */
+  const renderWallet = () => {
+    const escrowSum = workingJobs.reduce((sum, j) => sum + (j.wage_per_day * j.duration_days), 0);
 
-  const renderWallet = () => (
-    <div className="space-y-6 animate-in slide-in-from-bottom-4 duration-500 w-full">
-      <div className="flex items-center justify-between mb-8">
-        <h2 className="text-3xl font-black text-white" style={{ fontFamily: 'Outfit' }}>Escrow Wallet</h2>
-        <span className="bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 px-3 py-1 rounded-full text-xs font-bold uppercase tracking-widest flex items-center gap-2">
-          <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span> Smart Contract Active
-        </span>
-      </div>
+    return (
+      <div className="space-y-6 animate-in slide-in-from-bottom-4 duration-500 w-full">
+        <h2 className="text-3xl font-black text-white mb-8" style={{ fontFamily: 'Outfit' }}>{t('escrowWallet')}</h2>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
-        {/* Available Balance */}
-        <div className="bg-gradient-to-br from-slate-800 to-slate-900 border border-slate-700 rounded-3xl p-8 relative overflow-hidden">
-          <div className="absolute -right-20 -top-20 w-64 h-64 bg-emerald-500/10 rounded-full blur-3xl"></div>
-          <div className="relative z-10">
-            <div className="text-sm font-bold text-slate-400 uppercase tracking-widest mb-2">Available Balance</div>
-            <div className="text-6xl font-black text-emerald-400 mb-4" style={{ fontFamily: 'Outfit' }}>₹{realBalance.toLocaleString()}</div>
-            <div className="flex gap-3">
-              <button className="bg-white hover:bg-slate-200 text-slate-900 font-black px-5 py-3 rounded-xl flex items-center gap-2 text-sm transition-all">
-                <span>🏦</span> Withdraw to Bank
-              </button>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+          <div className="rounded-3xl bg-gradient-to-br from-slate-800 to-slate-900 border border-slate-700 p-8">
+            <div className="text-slate-400 text-xs font-bold uppercase tracking-widest mb-4">{t('walletBalance')}</div>
+            <div className="text-5xl font-black text-white" style={{ fontFamily: 'Outfit' }}>₹{(liveWorker.earnings || 0).toLocaleString()}</div>
+            <p className="text-slate-500 text-sm mt-4">✓ {t('availableToWithdraw')}</p>
+          </div>
+          
+          <div className="rounded-3xl bg-gradient-to-br from-emerald-900/40 to-slate-900 border border-emerald-500/30 p-8 relative overflow-hidden">
+            <div className="absolute top-0 right-0 p-6 opacity-10 text-8xl">🔒</div>
+            <div className="relative z-10">
+              <div className="text-emerald-400 text-xs font-bold uppercase tracking-widest mb-4">{t('safeInEscrow')}</div>
+              <div className="text-5xl font-black text-emerald-400" style={{ fontFamily: 'Outfit' }}>₹{escrowSum.toLocaleString()}</div>
+              <p className="text-slate-400 text-sm mt-4">{t('escrowGuarantee')}</p>
             </div>
           </div>
         </div>
 
-        {/* Locked Escrow */}
-        <div className="bg-gradient-to-br from-slate-800 to-slate-900 border border-amber-500/20 rounded-3xl p-8 relative overflow-hidden">
-          <div className="absolute -right-20 -top-20 w-64 h-64 bg-amber-500/10 rounded-full blur-3xl"></div>
-          <div className="relative z-10">
-            <div className="text-sm font-bold text-slate-400 uppercase tracking-widest mb-2">Locked in Escrow</div>
-            <div className="text-6xl font-black text-amber-400 mb-4" style={{ fontFamily: 'Outfit' }}>₹{lockedEscrow.toLocaleString()}</div>
-            <p className="text-slate-500 text-sm">Auto-released when contractor marks work complete</p>
-          </div>
-        </div>
-      </div>
+        <button className="w-full bg-white hover:bg-emerald-500 text-slate-900 hover:text-white font-black py-4 rounded-xl transition-all active:scale-[0.98] mb-8">
+          {t('withdrawNow')}
+        </button>
 
-      <h3 className="text-sm font-bold text-slate-500 uppercase tracking-widest mb-4">Active Escrow Contracts</h3>
-      <div className="space-y-4">
-        {workingJobs.length === 0 ? (
-          <div className="bg-slate-800/50 rounded-3xl p-12 text-center border border-slate-700 border-dashed">
-            <p className="text-slate-500">No funds currently locked in escrow.</p>
-          </div>
-        ) : (
-          workingJobs.map(job => {
-            const total = job.wage_per_day * job.duration_days;
-            return (
-              <div key={job.id} className="bg-slate-800 border border-slate-700 rounded-2xl p-6 flex justify-between items-center">
-                <div>
-                  <div className="text-white font-bold text-lg mb-1">{job.title}</div>
-                  <div className="text-slate-400 text-sm">{job.contractor_name} • Payout on completion</div>
-                </div>
-                <div className="text-right">
-                  <div className="text-amber-400 font-black text-xl flex items-center gap-2 justify-end">
-                    <span>🔒</span> ₹{total.toLocaleString()}
-                  </div>
-                  <div className="text-[10px] text-slate-500 uppercase tracking-widest font-bold mt-1">Locked in Escrow</div>
-                </div>
-              </div>
-            )
-          })
-        )}
-      </div>
-
-      {/* Payment History */}
-      {completedJobs.length > 0 && (
-        <>
-          <h3 className="text-sm font-bold text-emerald-500 uppercase tracking-widest mt-8 mb-4">Payment History</h3>
-          <div className="space-y-3">
-            {completedJobs.map(job => (
-              <div key={job.id} className="bg-emerald-500/5 border border-emerald-500/10 rounded-2xl p-5 flex justify-between items-center">
+        <h3 className="text-xl font-bold text-white mb-4">{t('recentTransactions')}</h3>
+        <div className="space-y-4">
+          {completedJobs.length === 0 ? (
+            <p className="text-slate-500 italic">{t('noTransactions')}</p>
+          ) : (
+            completedJobs.map(job => (
+              <div key={job.id} className="bg-slate-800 border border-slate-700 rounded-2xl p-5 flex justify-between items-center">
                 <div>
                   <div className="text-white font-bold">{job.title}</div>
                   <div className="text-slate-500 text-sm">{job.contractor_name}</div>
                 </div>
-                <div className="text-emerald-400 font-black text-lg">+₹{(job.wage_per_day * job.duration_days).toLocaleString()}</div>
+                <div className="text-emerald-400 font-black">+₹{(job.wage_per_day * job.duration_days).toLocaleString()}</div>
               </div>
-            ))}
-          </div>
-        </>
-      )}
-    </div>
-  );
-
-  /* ─────────────────── GROWTH TAB (INCOME SIMULATOR) ─────────────────── */
-  const renderGrowth = () => {
-    // Math for the simulator
-    const baseWage = 800;
-    const skillMultiplier = simSkill === 'Supervisor' ? 1.7 : 1.0;
-    const toolMultiplier = simLoan ? 1.2 : 1.0;
-    const monthlyDays = 25;
-    
-    const monthlyIncome = baseWage * skillMultiplier * toolMultiplier * monthlyDays;
-    
-    const chartData = [
-      { name: 'Current', value: baseWage * 25 },
-      { name: 'Year 1', value: monthlyIncome * 12 },
-      { name: 'Year 3', value: monthlyIncome * 12 * 3.5 }, // assume slight compound growth
-      { name: 'Year 5', value: monthlyIncome * 12 * 6 },
-    ];
-
-    const targetIncome = 25000;
-    const currentEarnings = liveWorker.earnings || 0;
-    const remaining = Math.max(0, targetIncome - currentEarnings);
-    const jobsNeeded = Math.ceil(remaining / baseWage);
-
-    return (
-      <div className="space-y-8 animate-in slide-in-from-bottom-4 duration-500 w-full">
-        {/* ── MUNSHI AI (FINANCIAL AGENT) ── */}
-        <div className="bg-gradient-to-br from-indigo-900 to-purple-900 border border-indigo-500/30 rounded-3xl p-8 shadow-[0_0_50px_rgba(79,70,229,0.2)]">
-          <div className="flex items-start gap-4">
-            <div className="w-14 h-14 bg-white/10 rounded-2xl flex items-center justify-center text-3xl shrink-0">📊</div>
-            <div className="flex-1">
-              <div className="flex items-center justify-between mb-2">
-                <h3 className="text-xl font-black text-white" style={{ fontFamily: 'Outfit' }}>Munshi AI <span className="text-indigo-300 text-sm ml-2 font-semibold">Your Financial Agent</span></h3>
-                <span className="text-xs font-bold text-white bg-indigo-500/50 px-3 py-1 rounded-full uppercase tracking-widest">Monthly Target: ₹{targetIncome.toLocaleString()}</span>
-              </div>
-              <p className="text-indigo-100/80 leading-relaxed mb-6 font-medium">
-                Bhai, you have earned <strong className="text-emerald-400 font-black">₹{currentEarnings.toLocaleString()}</strong> this month. 
-                {remaining > 0 
-                  ? ` You need ₹${remaining.toLocaleString()} more. Just take ${jobsNeeded} more days of ${w.skill} work at ₹${baseWage}/day and your target is hit! Keep going!` 
-                  : ` Amazing! You have hit your monthly target. Any extra work now is pure bonus!`}
-              </p>
-              
-              {/* Progress Bar */}
-              <div className="space-y-2">
-                <div className="flex justify-between text-xs font-bold text-indigo-200">
-                  <span>Current: ₹{currentEarnings.toLocaleString()}</span>
-                  <span>Goal: ₹{targetIncome.toLocaleString()}</span>
-                </div>
-                <div className="w-full h-3 bg-indigo-950 rounded-full overflow-hidden border border-indigo-500/20">
-                  <div 
-                    className="h-full bg-gradient-to-r from-emerald-400 to-emerald-500 transition-all duration-1000 relative"
-                    style={{ width: `${Math.min(100, (currentEarnings / targetIncome) * 100)}%` }}
-                  >
-                    <div className="absolute inset-0 bg-white/20 animate-pulse"></div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div className="flex items-center justify-between">
-          <div>
-            <h2 className="text-3xl font-black text-white" style={{ fontFamily: 'Outfit' }}>See Your Future</h2>
-            <p className="text-slate-400 mt-1">Play with the sliders to see how skills and tools increase your wealth.</p>
-          </div>
-          {score >= 80 && (
-            <div className="bg-amber-500/10 border border-amber-500/30 px-4 py-2 rounded-xl text-amber-400 text-xs font-bold uppercase tracking-widest flex items-center gap-2 shadow-[0_0_20px_rgba(245,158,11,0.15)]">
-              <span>🔓</span> Micro-Loan Unlocked
-            </div>
+            ))
           )}
-        </div>
-
-        <div className="grid md:grid-cols-12 gap-8">
-          {/* Controls */}
-          <div className="md:col-span-5 space-y-8">
-            <div className="bg-slate-800 border border-slate-700 rounded-3xl p-6">
-              <div className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-4">Skill Level</div>
-              <div className="flex gap-2">
-                <button 
-                  onClick={() => setSimSkill('Current')}
-                  className={`flex-1 py-3 rounded-xl font-bold text-sm transition-all ${simSkill === 'Current' ? 'bg-blue-500 text-white shadow-[0_0_15px_rgba(59,130,246,0.3)]' : 'bg-slate-900 text-slate-400 border border-slate-700'}`}
-                >
-                  {w.skill}
-                </button>
-                <button 
-                  onClick={() => setSimSkill('Supervisor')}
-                  className={`flex-1 py-3 rounded-xl font-bold text-sm transition-all ${simSkill === 'Supervisor' ? 'bg-blue-500 text-white shadow-[0_0_15px_rgba(59,130,246,0.3)]' : 'bg-slate-900 text-slate-400 border border-slate-700'}`}
-                >
-                  Supervisor
-                </button>
-              </div>
-            </div>
-
-            <div className="bg-slate-800 border border-slate-700 rounded-3xl p-6">
-              <div className="flex justify-between items-center mb-4">
-                <div className="text-xs font-bold text-slate-500 uppercase tracking-widest">Own Equipment</div>
-                {score < 80 && <span className="text-[10px] text-rose-400 font-bold bg-rose-500/10 px-2 py-1 rounded">Score &lt; 80 (Locked)</span>}
-              </div>
-              <div className="flex gap-2">
-                <button 
-                  onClick={() => setSimLoan(false)}
-                  className={`flex-1 py-3 rounded-xl font-bold text-sm transition-all ${!simLoan ? 'bg-emerald-500 text-white shadow-[0_0_15px_rgba(16,185,129,0.3)]' : 'bg-slate-900 text-slate-400 border border-slate-700'}`}
-                >
-                  Contractor Tools
-                </button>
-                <button 
-                  onClick={() => {
-                    if (score >= 80) setSimLoan(true);
-                  }}
-                  className={`flex-1 py-3 rounded-xl font-bold text-sm transition-all ${simLoan ? 'bg-emerald-500 text-white shadow-[0_0_15px_rgba(16,185,129,0.3)]' : 'bg-slate-900 text-slate-400 border border-slate-700'} ${score < 80 ? 'opacity-50 cursor-not-allowed' : ''}`}
-                >
-                  Get Loan
-                </button>
-              </div>
-            </div>
-
-            <div className="bg-gradient-to-r from-orange-500 to-rose-500 rounded-3xl p-6 text-white shadow-[0_10px_30px_rgba(249,115,22,0.3)]">
-              <div className="text-orange-100 text-xs font-bold uppercase tracking-widest mb-1">Projected Monthly</div>
-              <div className="text-4xl font-black mb-2">₹{monthlyIncome.toLocaleString()}</div>
-              <div className="text-sm font-medium text-rose-100">+ {Math.round((monthlyIncome / (baseWage * 25) - 1) * 100)}% increase</div>
-            </div>
-          </div>
-
-          {/* Chart */}
-          <div className="md:col-span-7 bg-slate-800 border border-slate-700 rounded-3xl p-6" style={{minHeight: '400px', height: '400px'}}>
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={chartData} margin={{ top: 20, right: 20, left: 0, bottom: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#334155" vertical={false} />
-                <XAxis dataKey="name" stroke="#94a3b8" tick={{ fill: '#94a3b8', fontSize: 12, fontWeight: 'bold' }} axisLine={false} tickLine={false} />
-                <YAxis stroke="#94a3b8" tick={{ fill: '#94a3b8', fontSize: 12 }} axisLine={false} tickLine={false} tickFormatter={(val) => `₹${val/1000}k`} />
-                <Tooltip 
-                  cursor={{ fill: '#1e293b' }}
-                  contentStyle={{ backgroundColor: '#0f172a', border: '1px solid #334155', borderRadius: '12px', color: '#fff', fontWeight: 'bold' }}
-                  formatter={(value) => [`₹${value.toLocaleString()}`, 'Earnings']}
-                />
-                <Bar dataKey="value" radius={[6, 6, 0, 0]}>
-                  {chartData.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={index === 0 ? '#475569' : '#f97316'} />
-                  ))}
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
         </div>
       </div>
     );
-  }
+  };
+
+  /* ─────────────────── GROWTH TAB ─────────────────── */
+  const renderGrowth = () => {
+    const targetIncome = 25000;
+    const currentIncome = liveWorker.earnings || 0;
+    const progress = Math.min(100, Math.max(0, (currentIncome / targetIncome) * 100));
+    
+    const baseWage = simSkill === 'Current' ? 900 : 1500;
+    const monthlyIncome = simLoan ? baseWage * 30 : baseWage * 25;
+
+    return (
+      <div className="space-y-6 animate-in slide-in-from-bottom-4 duration-500 w-full">
+        <div className="flex items-center justify-between mb-8">
+          <h2 className="text-3xl font-black text-white" style={{ fontFamily: 'Outfit' }}>{t('incomeSimulator')}</h2>
+          <span className="text-xs font-bold text-blue-400 bg-blue-500/10 border border-blue-500/20 px-3 py-1 rounded-full uppercase tracking-widest">Munshi AI</span>
+        </div>
+
+        {/* Current Target Tracker */}
+        <div className="bg-gradient-to-br from-indigo-900/50 to-slate-900 border border-indigo-500/30 rounded-3xl p-8 mb-8">
+          <div className="flex justify-between items-end mb-6">
+            <div>
+              <div className="text-indigo-400 text-xs font-bold uppercase tracking-widest mb-1">{t('targetIncome')}</div>
+              <div className="text-4xl font-black text-white" style={{ fontFamily: 'Outfit' }}>₹{targetIncome.toLocaleString()}</div>
+            </div>
+            <div className="text-right">
+              <div className="text-slate-400 text-xs font-bold uppercase tracking-widest mb-1">{t('currentPace')}</div>
+              <div className="text-xl font-bold text-emerald-400">₹{currentIncome.toLocaleString()}</div>
+            </div>
+          </div>
+          
+          <div className="w-full bg-slate-800 rounded-full h-4 mb-4 overflow-hidden border border-slate-700">
+            <div className="bg-indigo-500 h-4 rounded-full transition-all duration-1000" style={{ width: `${progress}%` }}></div>
+          </div>
+          <div className="flex justify-between items-center text-sm">
+            <span className="text-indigo-300 font-bold">{progress.toFixed(0)}% Achieved</span>
+            <span className="text-slate-400">{t('remainingNeeded')}: <span className="text-white font-bold">₹{Math.max(0, targetIncome - currentIncome).toLocaleString()}</span></span>
+          </div>
+
+          <div className="mt-6 bg-indigo-500/10 border border-indigo-500/20 rounded-xl p-4 flex items-center gap-4">
+            <div className="text-3xl">💡</div>
+            <div>
+              <p className="text-indigo-200 text-sm font-bold mb-1">Munshi AI Advice:</p>
+              <p className="text-indigo-300/80 text-xs">Based on your current average wage of ₹900/day, you need approximately <strong className="text-white">{Math.ceil(Math.max(0, targetIncome - currentIncome) / 900)} {t('moreJobsToHit')}</strong>.</p>
+            </div>
+          </div>
+        </div>
+
+        <h3 className="text-xl font-bold text-white mb-4">{t('careerGrowth')}</h3>
+      </div>
+    );
+  };
 
   return (
     <div className="flex h-screen bg-[#0f172a] text-slate-200 overflow-hidden font-sans">
@@ -966,7 +787,7 @@ export default function WorkerDashboard({ worker, language, setLanguage, onLogou
                 </div>
                 <div>
                   <h3 className="text-white font-black text-lg leading-tight">Ustaad AI</h3>
-                  <p className="text-orange-100/70 text-[10px] uppercase font-bold tracking-widest">Mentor + Munshi</p>
+                  <p className="text-orange-100/70 text-[10px] uppercase font-bold tracking-widest">{t('ustaadMentor')}</p>
                 </div>
               </div>
               <button onClick={() => { setShowUstaad(false); window.speechSynthesis.cancel(); }} className="w-8 h-8 rounded-full bg-white/10 flex items-center justify-center text-white hover:bg-white/20 text-lg">✕</button>
@@ -981,7 +802,7 @@ export default function WorkerDashboard({ worker, language, setLanguage, onLogou
                 <span className="text-indigo-400/50">|</span>
                 <span className="text-indigo-300 text-xs font-bold">⭐ {liveWorker.trustScore || 50}</span>
               </div>
-              <span className="text-[9px] font-bold text-indigo-400 bg-indigo-500/20 px-2 py-0.5 rounded-full">LIVE DATA</span>
+              <span className="text-[9px] font-bold text-indigo-400 bg-indigo-500/20 px-2 py-0.5 rounded-full">{t('ustaadLive')}</span>
             </div>
             
             {/* Messages */}
@@ -1031,7 +852,7 @@ export default function WorkerDashboard({ worker, language, setLanguage, onLogou
                   value={ustaadInput}
                   onChange={e => setUstaadInput(e.target.value)}
                   onKeyDown={e => e.key === 'Enter' && handleUstaadSend()}
-                  placeholder={isRecording ? '🔴 Bol raha hai...' : 'Type ya mic dabao...'}
+                  placeholder={isRecording ? '🔴 Bol raha hai...' : t('ustaadAsk')}
                   disabled={isRecording}
                   className="flex-1 bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-white text-sm focus:outline-none focus:border-orange-500 disabled:opacity-50"
                 />
@@ -1043,7 +864,7 @@ export default function WorkerDashboard({ worker, language, setLanguage, onLogou
                   ➤
                 </button>
               </div>
-              <p className="text-center text-[9px] text-slate-600 mt-1.5 font-medium">🎙️ Hold mic for voice in Hindi/Telugu/English • Powered by Bhashini</p>
+              <p className="text-center text-[9px] text-slate-600 mt-1.5 font-medium">🎙️ {t('bhashiniMic')}</p>
             </div>
           </div>
         </div>
