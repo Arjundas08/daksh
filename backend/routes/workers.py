@@ -118,22 +118,14 @@ async def voice_register(
 ):
     """
     Register a worker via voice input.
-    1. Transcribes audio using Bhashini ASR.
-    2. Extracts structured data using Gemini.
-    3. Saves worker to DB.
+    1. Extracts structured data using Gemini.
+    2. Saves worker to DB.
     """
     audio_bytes = await audio.read()
 
-    # Step 1: Transcribe audio
-    transcribed_text, detected_lang = speech_to_text(audio_bytes, language)
-    if not transcribed_text or transcribed_text.startswith("ASR error"):
-        raise HTTPException(status_code=422, detail=f"Transcription failed: {transcribed_text}")
-
-    # Step 2: Extract structured data using Gemini
-    model = genai.GenerativeModel("gemini-2.0-flash")
-    prompt = f"""Extract worker registration details from this speech transcript.
-Transcript: \"{transcribed_text}\"
-
+    # Pass audio directly to Gemini 2.5 Flash (supports WebM, native multilingual audio)
+    model = genai.GenerativeModel("gemini-2.5-flash")
+    prompt = f"""Extract worker registration details from this audio recording (language: {language}).
 Extract and return ONLY this JSON:
 {{
     "name": "worker's name",
@@ -146,38 +138,32 @@ Extract and return ONLY this JSON:
 If any field is not mentioned, make a reasonable guess or leave empty."""
 
     try:
-        response = model.generate_content(prompt)
+        response = model.generate_content([
+            {"mime_type": "audio/webm", "data": audio_bytes},
+            prompt
+        ])
         text = response.text.strip()
-        # Clean markdown code blocks if present
-        if text.startswith("```"):
-            text = text.split("\n", 1)[1]
-            text = text.rsplit("```", 1)[0]
-        extracted = json.loads(text)
+        # Clean markdown if present
+        if text.startswith("```json"):
+            text = text[7:-3].strip()
+        elif text.startswith("```"):
+            text = text[3:-3].strip()
+            
+        data = json.loads(text)
     except Exception as e:
-        raise HTTPException(
-            status_code=422,
-            detail=f"Failed to extract info from transcript: {str(e)}. Transcript was: {transcribed_text}",
-        )
+        print(f"[Voice Reg] Gemini extraction failed: {e}")
+        raise HTTPException(status_code=422, detail="Failed to extract details from audio.")
 
-    # Override extracted phone with verified phone if provided
-    final_phone = phone if phone else extracted.get("phone", "")
-
-    # Step 3: Save worker to DB
+    # Create worker
     worker = db.create_worker(
-        name=extracted.get("name", "Unknown"),
+        name=data.get("name", "Unknown"),
         email=email or "",
         password=password or "",
-        skill=extracted.get("skill", "Helper"),
-        location=extracted.get("location", ""),
-        phone=final_phone,
-        experience=extracted.get("experience", "0"),
+        skill=data.get("skill", "Helper"),
+        location=data.get("location", ""),
+        phone=phone or data.get("phone", ""),
+        experience=data.get("experience", ""),
         photo=photo or "",
     )
 
-    return {
-        "success": True,
-        "transcribed_text": transcribed_text,
-        "detected_language": detected_lang,
-        "extracted_info": extracted,
-        "worker": worker,
-    }
+    return {"success": True, "worker": worker}
